@@ -1,0 +1,8 @@
+# Build artifacts (binaries embed local paths; rebuild via deploy/install.sh)
+build/
+
+# macOS
+.DS_Store
+
+# Claude Code local settings
+.claude/

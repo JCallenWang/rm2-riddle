@@ -1,0 +1,23 @@
+# ===== rm2-scribe 設定 =====
+# 部署到 /home/root/.config/rm2-scribe/config.toml
+
+[llm]
+provider = "claude"          # "claude" | "gemini"(gemini 尚未實作)
+api_key  = ""                # ← 請填入你的 Anthropic API key
+model    = "claude-sonnet-5"
+system_prompt = "You are an assistant living inside a handwritten notebook. Reply in English, briefly and warmly."
+max_tokens = 500
+
+[trigger]
+mode = "idle_timeout"        # 停筆逾時觸發
+idle_seconds = 8             # 停筆 N 秒後送出
+notebook = "Tom"             # 只在這本筆記本裡才回應;留空 "" = 所有筆記本都觸發
+
+[animation]
+write_speed = 1.0            # 書寫回放速度倍率,越小越慢(浮現越慢)
+font_size_px = 44
+line_spacing = 1.5
+llm_fadeout = 30             # LLM 回應顯示 N 秒後自動擦除;0 = 不消失
+
+[capture]
+method = "strokes"           # 讀筆劃自渲染(P2 已驗證的主路)

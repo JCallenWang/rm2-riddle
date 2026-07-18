@@ -1,0 +1,12 @@
+[Unit]
+Description=rm2-scribe handwriting-to-LLM assistant
+After=xochitl.service
+
+[Service]
+Type=simple
+ExecStart=/home/root/rm2-scribe/rm2-scribe
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
