@@ -11,13 +11,14 @@ max_tokens = 500
 [trigger]
 mode = "idle_timeout"        # 停筆逾時觸發
 idle_seconds = 8             # 停筆 N 秒後送出
-notebook = "Tom"             # 只在這本筆記本裡才回應;留空 "" = 所有筆記本都觸發
+notebook = "Riddle"          # 只在這本筆記本裡才回應;留空 "" = 所有筆記本都觸發
 
 [animation]
 write_speed = 1.0            # 書寫回放速度倍率,越小越慢(浮現越慢)
 font_size_px = 44
 line_spacing = 1.5
 llm_fadeout = 30             # LLM 回應顯示 N 秒後自動擦除;0 = 不消失
+clear_mode = "region"        # region=只清內容範圍(快、乾淨) | page=整頁
 
 [capture]
-method = "strokes"           # 讀筆劃自渲染(P2 已驗證的主路)
+method = "strokes"           # 讀筆劃自渲染

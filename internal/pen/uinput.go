@@ -1,5 +1,6 @@
-// Package pen 建立一支虛擬 Wacom 筆(經由 /dev/uinput),
-// 讓 xochitl 把注入的筆劃當成真實手寫並渲染到 e-ink 畫面上。
+// Package pen 將合成筆劃注入 kernel 輸入層,讓 xochitl 當成真實手寫渲染到 e-ink 畫面。
+// 正式路徑為直寫真實節點 /dev/input/event1(OpenDirect,P1 實機驗證);
+// 另保留經 /dev/uinput 建立虛擬筆的路徑(New),但 xochitl 不列舉執行中新增的裝置,僅供實驗。
 //
 // 硬性限制:rM2 為 armv7 32-bit;本檔案只用 raw syscall,無 cgo、無第三方相依,
 // 以維持 CGO_ENABLED=0 的靜態交叉編譯。

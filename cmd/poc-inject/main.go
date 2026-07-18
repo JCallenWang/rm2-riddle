@@ -1,10 +1,11 @@
-// P1 PoC:建立虛擬筆並在畫面中央畫一個大寫「F」。
+// P1 PoC:注入筆事件在畫面中央畫一個大寫「F」(預設直寫 /dev/input/event1;
+// -uinput 改用虛擬裝置,實測 xochitl 不認)。
 // 「F」在兩軸皆不對稱,一次目視即可判定座標轉換的旋轉與鏡像是否正確。
 //
 // 用法(於 rM2 上以 root 執行):
 //
-//	./poc-inject            # 立即模式:建立虛擬筆 → 3 秒後畫 F → 銷毀
-//	./poc-inject -serve     # 常駐模式:建立虛擬筆後持續存活;
+//	./poc-inject            # 立即模式:3 秒後畫 F
+//	./poc-inject -serve     # 常駐模式:持續存活;
 //	                        # 每次偵測到觸發檔(/home/root/rm2-scribe/draw)即畫一個 F 並刪除觸發檔。
 //	                        # 供「先建筆 → 重啟 xochitl → 再觸發」的流程使用。
 package main

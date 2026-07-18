@@ -4,6 +4,8 @@ reMarkable 2 上的手寫助理:在指定筆記本裡手寫問題,停筆數秒�
 
 全程與官方 `xochitl` 共生——不改畫面驅動、不裝第三方套件管理器、不接管顯示,只透過注入筆事件與讀取設定達成。
 
+> **緣起:** 本專案根據 [MaximeRivest/riddle](https://github.com/MaximeRivest/riddle) 透過 AI 改編而成。原專案僅支援 reMarkable Paper Pro(aarch64,以插入 vendor 函式庫實作);本專案是 reMarkable 2(armv7)版本,以完全不同的架構重新實作(讀取/注入 `/dev/input/event1` 筆事件,不觸碰任何私有函式庫)。
+
 ## 運作流程
 
 ```
@@ -23,7 +25,7 @@ reMarkable 2 上的手寫助理:在指定筆記本裡手寫問題,停筆數秒�
 - 開發端:Go(交叉編譯,`GOOS=linux GOARCH=arm GOARM=7 CGO_ENABLED=0`)
 - 一組 Anthropic API key
 
-所有檔案部署於 `/home/root`,不觸碰僅剩約 20MB 的系統分割區。
+所有檔案部署於 `/home/root`,與系統分割區分離。
 
 ## 建置與部署
 
@@ -35,7 +37,7 @@ reMarkable 2 上的手寫助理:在指定筆記本裡手寫問題,停筆數秒�
 或手動:
 
 ```sh
-GOOS=linux GOARCH=arm GOARM=7 CGO_ENABLED=0 go build -ldflags="-s -w" -o build/rm2-scribe ./cmd/rm2-scribe
+GOOS=linux GOARCH=arm GOARM=7 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o build/rm2-scribe ./cmd/rm2-scribe
 ssh root@10.11.99.1 'killall -9 rm2-scribe 2>/dev/null; sleep 2'   # 先停舊程式(Linux 不可覆蓋執行中的檔案)
 scp build/rm2-scribe root@10.11.99.1:/home/root/rm2-scribe/
 scp deploy/rm2-scribe.service root@10.11.99.1:/etc/systemd/system/
@@ -60,13 +62,13 @@ max_tokens = 500
 [trigger]
 mode = "idle_timeout"        # 停筆逾時觸發
 idle_seconds = 8             # 停筆 N 秒後送出
-notebook = "Tom"             # 只在這本筆記本回應;留空 "" = 所有筆記本
+notebook = "Riddle"          # 只在這本筆記本回應;留空 "" = 所有筆記本
 
 [animation]
 write_speed = 1.0            # 回放速度倍率,越小寫得越慢(浮現越慢)
 font_size_px = 44
 line_spacing = 1.5
-llm_fadeout = 10             # 回覆顯示 N 秒後自動擦除;0 = 不消失
+llm_fadeout = 30             # 回覆顯示 N 秒後自動擦除;0 = 不消失
 clear_mode = "region"        # region=只清內容範圍(快、乾淨) | page=整頁(過慢會失效)
 ```
 
@@ -110,3 +112,7 @@ deploy/              config 範本、systemd unit、install.sh
 ```sh
 ssh root@10.11.99.1 'systemctl disable --now rm2-scribe; rm -rf /home/root/rm2-scribe /home/root/.config/rm2-scribe /etc/systemd/system/rm2-scribe.service; systemctl daemon-reload'
 ```
+
+## 授權
+
+MIT。本專案為 [MaximeRivest/riddle](https://github.com/MaximeRivest/riddle)(MIT)的 reMarkable 2 改編版,`LICENSE` 保留原作者的著作權宣告。

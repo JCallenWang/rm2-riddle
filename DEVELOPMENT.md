@@ -31,7 +31,7 @@
 | 電源鍵 | `/dev/input/event0` | 不使用 |
 | **Wacom I2C Digitizer(筆)** | `/dev/input/event1` | 讀取筆劃(EV_ABS: X/Y/壓力/傾斜) |
 | pt_mt(電容觸控) | `/dev/input/event2` | 觸發手勢的候選來源 |
-| `/dev/uinput` | 存在(10,223) | **可建立虛擬筆裝置注入筆劃** → 讓 xochitl 替我們畫字 |
+| `/dev/uinput` | 存在(10,223) | 可建立虛擬筆裝置(P1 實測 xochitl 不認執行中新增的裝置,最終改直寫 event1,見 §8) |
 
 Wacom 數位板座標系與螢幕像素座標不同(數位板約 20967×15725,螢幕 1404×1872,且軸向旋轉),注入時需做座標轉換,轉換參數需實機校正。
 
@@ -46,7 +46,7 @@ Wacom 數位板座標系與螢幕像素座標不同(數位板約 20967×15725,�
 - 位置:`/home/root/.local/share/remarkable/xochitl/`(實測 750 個項目)
 - 筆劃檔為 **`.rm` v6 格式**(實測檔頭 `reMarkable .lines file, version=6`),v6 是 3.x 韌體的新格式,結構複雜(CRDT 基礎),社群有 Python 解析器(rmscene),Go 生態支援度低。
 - 每本筆記有 `.thumbnails/`(低解析度縮圖)與 `.metadata` / `.content`(JSON,含頁面清單與最後開啟頁)。
-- xochitl 的 heap 約 55MB,`/proc/<pid>/mem` root 可讀 → **可用 reSnap 式「記憶體截圖」**:從 xochitl 行程記憶體中找出目前頁面的影像緩衝區,直接擷取為灰階點陣圖。
+- xochitl 的 heap 約 55MB,`/proc/<pid>/mem` root 可讀 → 理論上可用 reSnap 式「記憶體截圖」(此路線最終未採用,改為筆劃自渲染,見 §3 模組 B)。
 
 ---
 
@@ -57,20 +57,18 @@ Wacom 數位板座標系與螢幕像素座標不同(數位板約 20967×15725,�
 ```
 ┌─────────────────────────── reMarkable 2 ───────────────────────────┐
 │                                                                     │
-│  ┌──────────┐   觸發手勢    ┌─────────────────────────────────┐    │
-│  │ event1/2  │ ───────────▶ │        rm2-scribe (Go, 常駐)     │    │
-│  │ 筆/觸控   │              │                                  │    │
-│  └──────────┘              │ 1. 觸發偵測(監聽輸入事件)      │    │
-│                             │ 2. 畫面擷取(xochitl 記憶體)    │    │
-│  ┌──────────┐   讀取        │ 3. 呼叫 LLM(影像→辨識+回覆)   │────┼──▶ Claude /
-│  │ xochitl   │ ◀─────────── │ 4. 筆劃合成(文字→單線字型)    │    │    Gemini API
-│  │ 行程記憶體│              │ 5. uinput 注入(逐劃回放)      │    │    (HTTPS)
-│  └──────────┘              └───────────────┬──────────────────┘    │
-│                                             │ 虛擬筆事件             │
-│  ┌──────────┐                              ▼                       │
-│  │ xochitl   │ ◀── /dev/uinput(xochitl 以為是真筆,替我們把回覆   │
-│  │ (原廠UI)  │      一筆一劃畫進目前的筆記頁 → 天然的「慢慢浮現」)│
-│  └──────────┘                                                      │
+│  ┌──────────┐   筆事件      ┌─────────────────────────────────┐    │
+│  │ event1    │ ───────────▶ │        rm2-scribe (Go, 常駐)     │    │
+│  │ (Wacom筆) │              │                                  │    │
+│  └──────────┘              │ 1. 筆劃監聽 + 停筆逾時觸發       │    │
+│       ▲                     │ 2. 筆劃自渲染成 PNG              │    │
+│       │ 注入筆事件           │ 3. 呼叫 LLM(影像→辨識+回覆)   │────┼──▶ Claude API
+│       │ (直寫 event1)       │ 4. 筆劃合成(文字→單線字型)    │    │    (HTTPS)
+│       │                     │ 5. 直寫注入(逐劃回放)         │    │
+│       └──────────────────── └──────────────────────────────────┘    │
+│                                                                     │
+│  xochitl(原廠 UI)把注入的事件當成真筆,一筆一劃畫進目前的筆記頁  │
+│  → 天然的「慢慢浮現」動畫,回覆並隨筆記正常存檔                    │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -83,7 +81,7 @@ Wacom 數位板座標系與螢幕像素座標不同(數位板約 20967×15725,�
 | 接管模式(自製 SWTCON) | ❌ | 工程量極大,e-ink 波形時序極難,且韌體更新即壞 |
 | 呼叫官方手寫辨識 | ❌ | 裝置上無本地辨識引擎(實機搜尋證實),官方走私有雲端協定 |
 | 解析 .rm v6 檔案 | 備援 | v6 格式複雜、Go 支援度低;僅在記憶體截圖失敗時作為備案 |
-| **記憶體截圖 + LLM 視覺辨識 + uinput 注入** | ✅ | 全程不動系統分割區、不依賴韌體私有元件、動畫效果(逐劃浮現)由 xochitl 原生渲染,天然可靠 |
+| **筆劃自渲染 + LLM 視覺辨識 + event1 直寫注入** | ✅ | 全程不動系統分割區、不依賴韌體私有元件、動畫效果(逐劃浮現)由 xochitl 原生渲染,天然可靠。(原定「記憶體截圖 + uinput」分別於 P2/P1 實測後修正,見 §3B 與 §8) |
 
 **附帶優點:** LLM 的回覆是以「真筆劃」寫進筆記檔,會被 xochitl 正常存檔、同步、匯出 —— 對話紀錄自動保存在筆記本裡。
 
@@ -92,9 +90,10 @@ Wacom 數位板座標系與螢幕像素座標不同(數位板約 20967×15725,�
 ## 3. 模組設計
 
 ### 模組 A:觸發偵測(trigger)
-- 監聽 `/dev/input/event1`(筆),偵測約定手勢:**在頁面右下角特定區域畫一個小方框/勾選記號**(座標區域判定 + 筆劃密度),或簡化為「筆離開後靜止 N 秒」模式(可設定)。
-- 觸發方式為可設定項,預設用「右下角記號」以避免誤觸發。
-- 只做被動 read-only 監聽(`O_RDONLY`,不 grab),不干擾 xochitl 正常收筆劃。
+- 監聽 `/dev/input/event1`(筆),採「停筆逾時」觸發:停筆 `idle_seconds`(預設 8 秒)後送出本次累積的筆劃。
+- 可限定只在指定筆記本觸發(`notebook` 設定;讀 `xochitl.conf` 的 `LastOpen` 判斷目前筆記本)。
+- 只做被動 read-only 監聽(不 grab),不干擾 xochitl 正常收筆劃。
+- (原構想的「右下角手勢記號」觸發模式未實作,設定介面保留 `mode` 欄位。)
 
 ### 模組 B:筆劃擷取與渲染(capture / render)【2026-07-18 架構調整,已取代原記憶體截圖方案】
 - **不截 xochitl 畫面**,改為即時監聽 `/dev/input/event1`,累積本次手寫的筆劃點(ABS_X/ABS_Y,以 BTN_TOUCH 分段成多筆 stroke)。
@@ -105,47 +104,26 @@ Wacom 數位板座標系與螢幕像素座標不同(數位板約 20967×15725,�
 
 ### 模組 C:LLM 呼叫(llm)
 - 將 PNG 以 base64 附在多模態訊息中,一次完成「辨識手寫 + 生成回覆」(不需獨立 OCR 步驟)。
-- 支援雙供應商,依設定檔切換:
-  - **Claude**:`POST https://api.anthropic.com/v1/messages`(model 預設 `claude-sonnet-5`)
-  - **Gemini**:`POST https://generativelanguage.googleapis.com/v1beta/models/<model>:generateContent`
+- 介面抽象為 `Provider`,依設定檔切換;**目前僅實作 Claude**(`POST https://api.anthropic.com/v1/messages`,model 預設 `claude-sonnet-5`),Gemini 保留介面未實作(設定會回報明確錯誤)。
 - 純 `net/http` + 系統 CA,無第三方相依。
-- 回覆長度上限、system prompt(例如「用繁體中文簡短回覆」)皆為設定項。
+- 回覆長度上限、system prompt 皆為設定項。
 
 ### 模組 D:筆劃合成(strokes)
 - 將回覆文字轉為筆劃路徑:採用**單線(single-stroke)向量字型**(Hershey fonts,公有領域;CJK 需另評估——見待確認事項)。
 - 版面:從觸發點下方或頁面空白區開始排版,自動換行、行高、字距可設定。
 - 輸出:一串 (x, y, pressure, timing) 的筆劃序列。
 
-### 模組 E:uinput 注入(inject)
-- 透過 `/dev/uinput` 建立虛擬 Wacom 數位板(複製真實裝置的 capabilities:ABS_X/Y/PRESSURE/DISTANCE/TILT + BTN_TOOL_PEN)。
+### 模組 E:筆事件注入(inject)【P1 修正:直寫真實節點】
+- 以 `O_RDWR` 開啟 `/dev/input/event1` 直接 `write()` input_event,kernel 分發給 xochitl(`pen.OpenDirect()`,P1 實機驗證)。
+- 原定 `/dev/uinput` 虛擬 Wacom 裝置方案已否決:xochitl 不列舉執行中新增的輸入裝置(`pen.New()` 保留供實驗)。
 - 依模組 D 的序列逐事件回放;**回放速度即動畫速度**(可設定「書寫速度」,慢速回放 = 文字一筆一劃慢慢浮現)。
-- 座標轉換(螢幕像素 → Wacom 座標系)參數需實機校正一次後寫入設定檔。
+- 座標轉換(螢幕像素 → Wacom 座標系)公式已實機驗證,見 §8。
 
 ### 模組 F:主程式與設定(main/config)
 - 常駐方式:systemd service(`/etc/systemd/system/rm2-scribe.service` 為唯一碰到 `/etc` 的檔案,單一小文字檔,可隨時 `disable + rm` 完全移除;若要做到 100% 不碰系統分割區,可改為手動 SSH 啟動——見待確認事項)。
 - 設定檔:`/home/root/.config/rm2-scribe/config.toml`
 
-```toml
-# ===== rm2-scribe 設定 =====
-[llm]
-provider = "claude"          # "claude" | "gemini"
-api_key  = ""                # ← 留空,由使用者自行填入
-model    = "claude-sonnet-5"
-system_prompt = "你是手寫筆記本裡的助理,請用繁體中文簡短回覆。"
-max_tokens = 500
-
-[trigger]
-mode = "idle_timeout"        # "corner_mark" | "idle_timeout"
-idle_seconds = 8             # 停筆 N 秒後送出(僅在該次觸發後有新筆劃才會再次觸發,避免重複送出)
-
-[animation]
-write_speed = 1.0            # 書寫回放速度倍率,越小越慢(浮現越慢)
-font_size_px = 40
-line_spacing = 1.4
-
-[capture]
-method = "memory"            # "memory" | "thumbnail"
-```
+- 設定範本以 `deploy/config.toml` 為準(provider / api_key / model / system_prompt / max_tokens、idle_seconds / notebook、write_speed / font_size_px / line_spacing / llm_fadeout / clear_mode、capture.method = "strokes")。
 
 ---
 
@@ -166,13 +144,13 @@ method = "memory"            # "memory" | "thumbnail"
 | 階段 | 內容 | 驗證方式 | 風險 |
 |---|---|---|---|
 | P1 | **uinput 注入 PoC**:虛擬筆畫一條線,確認 xochitl 收到且螢幕顯示 | 實機看螢幕出現線條 | 中——若 xochitl 不認虛擬裝置,整個顯示方案要重議 |
-| P2 | **記憶體截圖 PoC**:從 xochitl 記憶體撈出目前頁面點陣圖 | 存 PNG 傳回 Mac 目視比對 | 中——3.27.1 記憶體佈局未知,需搜尋校正 |
+| P2 | **筆劃擷取+自渲染 PoC**(原定記憶體截圖,實作時改道,見 §3B) | 存 PNG 傳回 Mac 目視比對 | 中 |
 | P3 | 觸發偵測(讀 event1 判定手勢) | 實機畫記號觀察日誌 | 低 |
 | P4 | LLM API 呼叫(影像→文字回覆) | 裝置上 curl 等價測試 + Go 實作 | 低 |
 | P5 | 筆劃合成(文字→Hershey 路徑→排版) | 先在 Mac 上渲染預覽 | 低(CJK 除外) |
 | P6 | 整合 + 設定檔 + 動畫調速 + 常駐 | 端到端實測 | 低 |
 
-P1、P2 是本專案僅存的「可行性」風險,**先做這兩個 PoC,任一失敗即停下重新討論方案**(P2 失敗有縮圖備援;P1 失敗則需重新評估顯示途徑)。
+P1、P2 是本專案僅存的「可行性」風險,**先做這兩個 PoC,任一失敗即停下重新討論方案**。(結果:P1 於改用直寫 event1 後通過,見 §8;P2 於改用筆劃自渲染後通過,見 §3B。)
 
 ## 6. 使用者決議(2026-07-18 確認)
 
@@ -181,22 +159,13 @@ P1、P2 是本專案僅存的「可行性」風險,**先做這兩個 PoC,任一�
 3. **啟動方式:systemd 常駐**——接受在 `/etc/systemd/system/` 放置單一 unit 檔(約 300 bytes,可完全移除)。
 4. **LLM:先接 Claude**(Anthropic Messages API),架構保留 Gemini 切換介面。
 
-## 9. 實作進度(2026-07-18)
+## 7. P1 PoC 設計附註(記錄於實測前;實測結論見 §8)
 
-| 模組 | 檔案 | 狀態 |
-|---|---|---|
-| A 筆劃監聽+停筆觸發 | `internal/input/reader.go` | ✅ P2 實機驗證 |
-| B 筆劃→PNG 渲染 | `internal/render/render.go` | ✅ P2 實機(「Hi How are you?」正確) |
-| C Claude LLM(net/http 零相依) | `internal/llm/claude.go` | ✅ 編譯通過,待 API key 端到端 |
-| D 單線字型+排版 | `internal/font/{font,layout}.go` | ✅ 本機渲染驗證清楚 |
-| E 直寫注入 | `internal/pen/uinput.go` | ✅ P1 實機驗證 |
-| F 主程式+設定+systemd | `cmd/rm2-scribe/`, `deploy/` | ✅ 實機啟動;端到端待 key |
-
-**重要修正 — 讀寫共用節點的回授迴圈:** reader 與 injector 同開 `/dev/input/event1`,注入的回覆筆劃會被自己讀回、當成新手寫 → 無限迴圈。解法:`input.Reader.Mute()/Unmute()`,在讀取源頭(goroutine 內)丟棄靜音期間事件並清空累積,`handle()` 注入前 Mute、注入後留 300ms 讓事件流盡再 Unmute。
-
-**零相依決策:** LLM 呼叫用 `net/http` 直打 Anthropic Messages API,不引官方 SDK(維持 armv7 + CGO_ENABLED=0 靜態、最小體積)。
-
-**端到端剩餘:** 需使用者於 `config.toml` 填 `api_key`,再手寫→停筆 8 秒觀察完整閉環。部署:`deploy/install.sh`(交叉編譯→scp→啟用 systemd,全落 /home/root)。
+- 虛擬裝置以 `/dev/uinput` 建立,capabilities 於執行期從真實 Wacom(`/dev/input/event1`)以 `EVIOCGABS` 複製,不寫死數值。
+- 座標假設(rmkit 慣例,待 P1 實測驗證):Wacom X 軸沿螢幕縱向反向、Y 軸沿螢幕橫向:
+  `wacom_x = (1872 - screen_y) × 20967⁄1872`、`wacom_y = screen_x × 15725⁄1404`
+- 測試圖形採用大寫字母「F」(兩軸皆不對稱),一次目視即可同時判定旋轉與鏡像是否正確。
+- 已知風險:xochitl(Qt6 evdev)可能只在啟動時列舉輸入裝置。若注入無反應,備案為 `systemctl restart xochitl`(僅重啟原廠 UI,無資料風險)後保持虛擬裝置存活再測。
 
 ## 8. P1 結果(2026-07-18 實機通過 ✅)
 
@@ -213,10 +182,20 @@ P1、P2 是本專案僅存的「可行性」風險,**先做這兩個 PoC,任一�
   - DrawStroke 已據此重寫落筆/提筆序列與壓力(改用實測級距 ~2200)。
 - Wacom 軸範圍實測:X 0–20966、Y 0–15725、PRESSURE 0–4095。
 
-## 7. P1 PoC 附註(虛擬筆注入)
+## 9. 實作進度(2026-07-18)
 
-- 虛擬裝置以 `/dev/uinput` 建立,capabilities 於執行期從真實 Wacom(`/dev/input/event1`)以 `EVIOCGABS` 複製,不寫死數值。
-- 座標假設(rmkit 慣例,待 P1 實測驗證):Wacom X 軸沿螢幕縱向反向、Y 軸沿螢幕橫向:
-  `wacom_x = (1872 - screen_y) × 20967⁄1872`、`wacom_y = screen_x × 15725⁄1404`
-- 測試圖形採用大寫字母「F」(兩軸皆不對稱),一次目視即可同時判定旋轉與鏡像是否正確。
-- 已知風險:xochitl(Qt6 evdev)可能只在啟動時列舉輸入裝置。若注入無反應,備案為 `systemctl restart xochitl`(僅重啟原廠 UI,無資料風險)後保持虛擬裝置存活再測。
+| 模組 | 檔案 | 狀態 |
+|---|---|---|
+| A 筆劃監聽+停筆觸發 | `internal/input/reader.go` | ✅ P2 實機驗證 |
+| B 筆劃→PNG 渲染 | `internal/render/render.go` | ✅ P2 實機(「Hi How are you?」正確) |
+| C Claude LLM(net/http 零相依) | `internal/llm/claude.go` | ✅ 實機端到端驗證 |
+| D 單線字型+排版 | `internal/font/{font,layout}.go` | ✅ 本機渲染驗證清楚 |
+| E 直寫注入(畫筆/橡皮擦) | `internal/pen/uinput.go` | ✅ P1 實機驗證 |
+| F 主程式+設定+systemd | `cmd/rm2-scribe/`, `deploy/` | ✅ 實機常駐運作 |
+| 筆記本偵測(name↔uuid、頁面路徑) | `internal/xochitl/current.go` | ✅ 實機驗證 |
+
+**重要修正 — 讀寫共用節點的回授迴圈:** reader 與 injector 同開 `/dev/input/event1`,注入的回覆筆劃會被自己讀回、當成新手寫 → 無限迴圈。解法:`input.Reader.Mute()/Unmute()`,在讀取源頭(goroutine 內)丟棄靜音期間事件並清空累積,`handle()` 注入前 Mute、注入後留 300ms 讓事件流盡再 Unmute。
+
+**零相依決策:** LLM 呼叫用 `net/http` 直打 Anthropic Messages API,不引官方 SDK(維持 armv7 + CGO_ENABLED=0 靜態、最小體積)。
+
+**端到端狀態:** 已於實機完成閉環驗證(手寫→停筆觸發→擦除吸收→LLM 回覆逐劃浮現→逾時自動擦除)。部署:`deploy/install.sh`(交叉編譯→scp→啟用 systemd,全落 /home/root)。
