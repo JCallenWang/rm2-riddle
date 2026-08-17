@@ -20,8 +20,8 @@ reMarkable 2 上的手寫助理:在指定筆記本裡手寫問題,停筆數秒�
 ## 硬體 / 環境需求
 
 - **reMarkable 2**(armv7 32-bit;本專案不支援 Paper Pro 的 aarch64)
-- 韌體 3.x(開發於 3.27.1;**勿安裝 Toltec**,超出其支援範圍有軟磚風險)
-- USB 連線可 SSH(`root@10.11.99.1`)
+- 韌體 3.x(實測 3.27.1、3.28.0;**勿安裝 Toltec**,超出其支援範圍有軟磚風險)
+- 可 SSH 連上裝置:USB(`root@10.11.99.1`)或 WiFi(mDNS 名稱 `remarkable.local`,建議在 `~/.ssh/config` 設一個 `rm2` alias)
 - 開發端:Go(交叉編譯,`GOOS=linux GOARCH=arm GOARM=7 CGO_ENABLED=0`)
 - 一組 Anthropic API key
 
@@ -30,9 +30,12 @@ reMarkable 2 上的手寫助理:在指定筆記本裡手寫問題,停筆數秒�
 ## 建置與部署
 
 ```sh
-# 一鍵:交叉編譯 → scp 到 /home/root → 啟用 systemd 服務
-./deploy/install.sh
+# 一鍵:交叉編譯 → 停舊程式 → scp 到 /home/root → 啟用 systemd 服務
+./deploy/install.sh                 # 預設 USB 連線 root@10.11.99.1
+RM2_HOST=rm2 ./deploy/install.sh    # 走 WiFi / ssh alias
 ```
+
+> **OS 更新後程式失效?** reMarkable 的 OS 更新是 A/B 分割區切換,會清掉系統分割區上的 systemd unit(`/etc/systemd/system/rm2-scribe.service`),服務因此消失;`/home/root` 下的執行檔與設定(含 api_key)不受影響。**重跑一次 `install.sh` 即可恢復**(已於 3.27.1 → 3.28.0 更新實測)。
 
 或手動:
 

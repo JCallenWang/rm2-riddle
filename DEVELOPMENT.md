@@ -13,7 +13,7 @@
 |---|---|---|
 | 機型 | reMarkable 2(i.MX7D, Cortex-A7 雙核) | — |
 | CPU 架構 | **armv7l(32-bit)**,VFPv4 + NEON,armhf ABI | 編譯目標必須是 `GOARCH=arm GOARM=7`,**絕不能用 arm64** |
-| 韌體 | 3.27.1.0(Codex Linux 5.7.121, Yocto scarthgap) | 超出 Toltec 支援範圍(≤3.3.2),**不可安裝 Toltec** |
+| 韌體 | 3.27.1.0(Codex Linux 5.7.121, Yocto scarthgap);2026-08 更新至 3.28.0.169(Codex 5.8.202)後複驗仍正常 | 超出 Toltec 支援範圍(≤3.3.2),**不可安裝 Toltec**;OS 更新為 A/B 分割區切換,`/etc` 下的 systemd unit 會被清除(見 §4) |
 | RAM | 1GB(可用約 800MB) | 充足 |
 | `/`(系統分割區) | 255.7MB,僅剩 **20.5MB** | **禁止寫入任何檔案**,全部部署到 `/home/root/` |
 | `/home`(資料分割區) | 6.6GB,可用 5.6GB | 所有程式、設定、快取放這裡 |
@@ -138,6 +138,7 @@ Wacom 數位板座標系與螢幕像素座標不同(數位板約 20967×15725,�
 4. **不安裝** Toltec/opkg/任何套件管理器(韌體 3.27.1 超出支援範圍,有軟磚風險)。
 5. **不修改、不重啟、不注入** xochitl(僅 read-only 讀其記憶體 + 透過 uinput 給它餵事件)。
 6. 部署工具:`scp`(裝置端已有);解除安裝 = 刪除 `/home/root/rm2-scribe/` 即可。
+7. **OS 更新後需重新部署 unit:** reMarkable OS 更新採 A/B 分割區切換,新系統分割區不含我們放的 `/etc/systemd/system/rm2-scribe.service`,服務會「消失」(2026-08-17 於 3.27.1 → 3.28.0 實證:unit 不見、`/home/root` 下執行檔/設定/筆記本皆完好、event1 仍為 Wacom、執行檔可直接啟動)。修復 = 重跑 `deploy/install.sh`。無法放進 `/home` 讓 systemd 自動找到,故此步驟無法免除。
 
 ## 5. 開發順序與風險驗證點(依風險由高至低)
 
