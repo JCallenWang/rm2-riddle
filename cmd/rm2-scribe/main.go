@@ -176,6 +176,9 @@ func watchNotebook(cfg config.Config, reader *input.Reader, stop <-chan struct{}
 		case <-t.C:
 			open := xochitl.CurrentName() == target
 			reader.Gate(!open) // 非指定筆記本 → 閘門關閉,丟棄事件
+			if !prevOpen && open {
+				log.Printf("進入筆記本 %q,開始接收手寫", target)
+			}
 			if prevOpen && !open {
 				log.Printf("偵測到離開/關閉筆記本 %q,清除記錄與內容", target)
 				reader.ClearBuffer()

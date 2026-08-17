@@ -105,7 +105,7 @@ deploy/              config 範本、systemd unit、install.sh
 - **擦除用單一連續蛇形筆劃**。逐條掃描線各自落筆/提筆會有工具切換競態,偶爾把某條擦除線畫成黑線。
 - **橡皮擦壓力用 ~2200**。軸最大值 4095 超出真筆範圍,會被 xochitl 忽略。
 - **座標轉換**(螢幕 1404×1872 → Wacom):`wacom_x = (1872 − screen_y) × 20966⁄1872`、`wacom_y = screen_x × 15725⁄1404`。
-- **目前筆記本判斷**:讀 `xochitl.conf` 的 `LastOpen=<uuid>`(即時更新);`.metadata` 的 `lastOpened` 不即時,不可靠。
+- **目前筆記本判斷**:讀 `xochitl.conf` 的 `LastOpen`(即時更新);`.metadata` 的 `lastOpened` 不即時,不可靠。值的格式隨韌體而異:3.27 是純 uuid,3.28 起是 `@ByteArray(<uuid>)`(Qt QSettings 序列化),程式兩者皆相容——3.28 更新後「完全沒反應、日誌只有啟動行」就是這個格式改變造成閘門常閉。
 - **關閉筆記本徹底清空**:刪除該筆記本的頁面 `.rm` 檔(保留 `.content` 結構),須在筆記本關閉後進行。
 
 更完整的架構決策與各階段驗證記錄見 [`DEVELOPMENT.md`](DEVELOPMENT.md)。

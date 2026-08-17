@@ -1,9 +1,13 @@
 // Package xochitl 讀取 xochitl 的即時狀態。
 // 目前用途:判斷「現在打開的是哪一本筆記本」,以便把助理限定在專屬筆記本。
 //
-// 訊號來源:/home/root/.config/remarkable/xochitl.conf 的 LastOpen=<uuid>。
+// 訊號來源:/home/root/.config/remarkable/xochitl.conf 的 LastOpen。
 // 實測(2026-07-18)此值在「打開筆記本當下」即時更新,回到檔案清單時清空;
 // 比 .metadata 的 lastOpened 可靠(後者不會即時更新)。
+//
+// 值的格式隨韌體版本不同:3.27 為純 uuid(LastOpen=<uuid>),
+// 3.28 起以 Qt QSettings 的 QByteArray 形式儲存(LastOpen=@ByteArray(<uuid>),
+// 清空時為 LastOpen=@ByteArray())。parseLastOpen 兩者皆相容。
 package xochitl
 
 import (
@@ -19,7 +23,11 @@ const (
 	dataDir  = "/home/root/.local/share/remarkable/xochitl"
 )
 
-var visibleNameRe = regexp.MustCompile(`"visibleName"\s*:\s*"((?:[^"\\]|\\.)*)"`)
+var (
+	visibleNameRe = regexp.MustCompile(`"visibleName"\s*:\s*"((?:[^"\\]|\\.)*)"`)
+	// Qt QSettings 型別包裝,例如 @ByteArray(...)、@Variant(...)。
+	qtWrapperRe = regexp.MustCompile(`^@[A-Za-z]+\((.*)\)$`)
+)
 
 // CurrentUUID 回傳目前打開的文件 UUID;無(在檔案清單)時回傳空字串。
 func CurrentUUID() string {
@@ -32,10 +40,20 @@ func CurrentUUID() string {
 	for sc.Scan() {
 		line := sc.Text()
 		if strings.HasPrefix(line, "LastOpen=") {
-			return strings.TrimSpace(strings.TrimPrefix(line, "LastOpen="))
+			return parseLastOpen(strings.TrimPrefix(line, "LastOpen="))
 		}
 	}
 	return ""
+}
+
+// parseLastOpen 把 xochitl.conf 中 LastOpen 的原始值正規化為 uuid:
+// 剝除 Qt 型別包裝(@ByteArray(...))與引號、去除空白;無內容回傳空字串。
+func parseLastOpen(raw string) string {
+	v := strings.TrimSpace(raw)
+	if m := qtWrapperRe.FindStringSubmatch(v); m != nil {
+		v = m[1]
+	}
+	return strings.TrimSpace(strings.Trim(v, `"`))
 }
 
 // CurrentName 回傳目前打開筆記本的可見名稱;無則回傳空字串。

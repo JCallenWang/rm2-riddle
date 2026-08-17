@@ -21,6 +21,7 @@ rm2-scribe:在 reMarkable 2 上讀取手寫、送 Claude 視覺辨識+回覆、�
 - 不寫 fb0、不裝 rm2fb——與 xochitl 共生,回覆靠注入筆事件到 `/dev/input/event1` 讓 xochitl 自己渲染。
 - uinput 虛擬裝置 xochitl 不認,注入必須直寫真實節點 event1。
 - reader 與 injector 共用 event1:注入前必須 `input.Reader.Mute()`,否則回覆被讀回成新手寫造成無限迴圈。
+- 目前筆記本靠 `xochitl.conf` 的 `LastOpen`;其值格式隨韌體變(3.27 純 uuid、3.28 `@ByteArray(uuid)`),解析集中在 `xochitl.parseLastOpen()`,韌體更新後若「無反應且日誌只有啟動行」先查這裡。
 
 ## 模組地圖
 

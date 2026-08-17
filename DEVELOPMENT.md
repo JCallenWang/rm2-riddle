@@ -199,4 +199,6 @@ P1、P2 是本專案僅存的「可行性」風險,**先做這兩個 PoC,任一�
 
 **零相依決策:** LLM 呼叫用 `net/http` 直打 Anthropic Messages API,不引官方 SDK(維持 armv7 + CGO_ENABLED=0 靜態、最小體積)。
 
+**3.28 韌體相容修正(2026-08-17):** OS 更新後程式「無反應且零日誌」。除了 systemd unit 被清除(§4-7),真正的靜默失效點是 `xochitl.conf` 的 `LastOpen` 值格式從純 uuid 變成 Qt QSettings 的 `@ByteArray(<uuid>)`,舊解析把整串當 uuid → 找不到 `.metadata` → 筆記本名稱為空 → 閘門常閉、筆劃全被丟棄。修正:`xochitl.parseLastOpen()` 剝除 `@Type(...)` 包裝(附單元測試),並在進入指定筆記本時記錄日誌,讓閘門狀態可觀測。
+
 **端到端狀態:** 已於實機完成閉環驗證(手寫→停筆觸發→擦除吸收→LLM 回覆逐劃浮現→逾時自動擦除)。部署:`deploy/install.sh`(交叉編譯→scp→啟用 systemd,全落 /home/root)。
