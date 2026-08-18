@@ -50,6 +50,7 @@ func Default() Config {
 	c.LLM.MaxTokens = 500
 	c.Trigger.Mode = "idle_timeout"
 	c.Trigger.IdleSeconds = 8
+	c.Trigger.Notebook = "Tom"
 	c.Animation.WriteSpeed = 1.0
 	c.Animation.FontSizePx = 44
 	c.Animation.LineSpacing = 1.5

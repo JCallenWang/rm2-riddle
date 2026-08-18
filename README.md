@@ -65,7 +65,7 @@ max_tokens = 500
 [trigger]
 mode = "idle_timeout"        # 停筆逾時觸發
 idle_seconds = 8             # 停筆 N 秒後送出
-notebook = "Riddle"          # 只在這本筆記本回應;留空 "" = 所有筆記本
+notebook = "Tom"             # 只在這本筆記本回應;留空 "" = 所有筆記本
 
 [animation]
 write_speed = 1.0            # 回放速度倍率,越小寫得越慢(浮現越慢)
@@ -81,6 +81,10 @@ clear_mode = "region"        # region=只清內容範圍(快、乾淨) | page=�
 
 不想每次都 SSH 進去改設定的話,可以開啟裝置上的網頁介面:用瀏覽器(手機也行)編輯設定、
 測試 API key、看即時日誌、重啟服務。介面走 HTTPS,預設關閉。
+
+網頁上能改的是 LLM(模型選單 Opus/Sonnet/Haiku、API key、system prompt、max_tokens)、
+觸發(筆記本、停筆秒數)與書寫動畫;`[web]` 區塊本身**只能用 SSH 編輯**——這樣即使網頁密碼外流,
+也無法把服務改綁到別的位址或改掉密碼把你鎖在外面。
 
 編輯 `config.toml` 的 `[web]` 區塊後重啟服務:
 
@@ -146,7 +150,7 @@ internal/render/     筆劃 → PNG
 internal/llm/        Anthropic Messages API(net/http 零相依)
 internal/font/       單線向量字型 + 排版
 internal/pen/        直寫 /dev/input/event1 注入(畫筆 / 橡皮擦)
-internal/xochitl/    偵測目前筆記本、name↔uuid、頁面路徑、筆記本清單
+internal/xochitl/    偵測目前筆記本、name↔uuid、頁面路徑
 internal/web/        網頁設定介面(HTTPS + 自簽憑證,零相依 net/http)
 internal/config/     零相依 TOML 子集解析
 deploy/              config 範本、systemd unit、install.sh

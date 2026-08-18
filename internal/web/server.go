@@ -40,6 +40,17 @@ const (
 //go:embed index.html
 var indexHTML []byte
 
+// models 是設定介面可選的模型。標籤給人看,id 是 Anthropic Messages API 實際吃的字串,
+// 選單選了哪個等級就寫入對應的 id;換代時只需要改這裡。
+var models = []struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
+}{
+	{"claude-opus-5", "Opus — 最強,複雜任務"},
+	{"claude-sonnet-5", "Sonnet — 能力與速度兼顧"},
+	{"claude-haiku-4-5", "Haiku — 最快、最省"},
+}
+
 // Options 由主程式提供。
 type Options struct {
 	ConfigPath string
@@ -158,8 +169,6 @@ type cfgJSON struct {
 	LineSpacing  float64 `json:"line_spacing"`
 	LLMFadeout   float64 `json:"llm_fadeout"`
 	ClearMode    string  `json:"clear_mode"`
-	WebEnabled   bool    `json:"web_enabled"`
-	WebListen    string  `json:"web_listen"`
 }
 
 func toJSON(c config.Config) cfgJSON {
@@ -175,8 +184,6 @@ func toJSON(c config.Config) cfgJSON {
 		LineSpacing:  c.Animation.LineSpacing,
 		LLMFadeout:   c.Animation.LLMFadeout,
 		ClearMode:    c.Animation.ClearMode,
-		WebEnabled:   c.Web.Enabled,
-		WebListen:    c.Web.Listen,
 	}
 }
 
@@ -189,9 +196,8 @@ func (s *server) handleState(w http.ResponseWriter, r *http.Request) {
 	current := xochitl.CurrentName()
 	writeJSON(w, http.StatusOK, map[string]any{
 		"config":           toJSON(cfg),
+		"models":           models,
 		"has_key":          cfg.LLM.APIKey != "",
-		"has_web_password": cfg.Web.Password != "",
-		"notebooks":        xochitl.ListNotebooks(),
 		"current_notebook": current,
 		"gate_open":        cfg.Trigger.Notebook == "" || current == cfg.Trigger.Notebook,
 		"pid":              os.Getpid(),
@@ -202,9 +208,8 @@ func (s *server) handleState(w http.ResponseWriter, r *http.Request) {
 
 type saveReq struct {
 	cfgJSON
-	APIKey      string `json:"api_key"`      // 留空 = 不變
-	WebPassword string `json:"web_password"` // 留空 = 不變
-	Apply       bool   `json:"apply"`        // true = 存檔後重新啟動套用
+	APIKey string `json:"api_key"` // 留空 = 不變
+	Apply  bool   `json:"apply"`   // true = 存檔後重新啟動套用
 }
 
 func (s *server) handleSaveConfig(w http.ResponseWriter, r *http.Request) {
@@ -234,14 +239,11 @@ func (s *server) handleSaveConfig(w http.ResponseWriter, r *http.Request) {
 	cfg.Animation.LineSpacing = req.LineSpacing
 	cfg.Animation.LLMFadeout = req.LLMFadeout
 	cfg.Animation.ClearMode = req.ClearMode
-	cfg.Web.Enabled = req.WebEnabled
-	cfg.Web.Listen = req.WebListen
 	if req.APIKey != "" {
 		cfg.LLM.APIKey = req.APIKey
 	}
-	if req.WebPassword != "" {
-		cfg.Web.Password = req.WebPassword
-	}
+	// [web] 區塊刻意不從網頁改:設定檔裡有 API key,監聽位址與密碼只能用 SSH 編輯,
+	// 這樣即使網頁密碼外流,也無法把服務改綁到別處或把使用者鎖在外面。
 
 	if err := validate(cfg); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -286,14 +288,6 @@ func validate(c config.Config) error {
 	}
 	if c.Animation.ClearMode != "region" && c.Animation.ClearMode != "page" {
 		return fmt.Errorf("clear_mode 只能是 region 或 page")
-	}
-	if c.Web.Enabled {
-		if _, _, err := net.SplitHostPort(c.Web.Listen); err != nil {
-			return fmt.Errorf("web listen 需為 host:port 格式")
-		}
-		if !loopbackOnly(c.Web.Listen) && c.Web.Password == "" {
-			return fmt.Errorf("對區網開放時必須設定網頁密碼")
-		}
 	}
 	return nil
 }
