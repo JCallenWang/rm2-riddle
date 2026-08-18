@@ -93,12 +93,31 @@ cert_file = ""               # 留空 = 自動產生自簽憑證
 key_file  = ""
 ```
 
-接著開 `https://remarkable.local:8443/`。
+接著開瀏覽器連上裝置。**網址用裝置的 IP**(服務啟動時會把實際位址印在日誌裡:
+`ssh rm2 'journalctl -u rm2-scribe -n 20 | grep 網頁'`),例如 `https://192.168.1.134:8443/`。
+
+> 兩個一定會踩到的坑:
+> - **裝置休眠時 WiFi 會關閉**(stock 韌體閒置約 20 分鐘後 suspend),這時瀏覽器會顯示
+>   `ERR_ADDRESS_UNREACHABLE`——不是憑證或防火牆問題,先點亮螢幕喚醒裝置再連。
+> - **`remarkable.local` 不一定解析得到**:實測某些網路只回一個失效的 IPv6 link-local、
+>   查不到 A 記錄,瀏覽器一樣會 unreachable。用 IP 最保險;想固定 IP 就在路由器上做 DHCP 保留。
+
 
 - **設定檔裡有 API key**,所以對外開放(非 127.0.0.1)卻沒設密碼時,介面會拒絕啟動並在日誌說明。
 - API key 永遠不會回傳給瀏覽器;表單留空 = 維持原值。
 - 憑證是自動產生的自簽憑證(SAN 涵蓋 `remarkable.local` 與裝置當下的 IP,DHCP 換位址會自動重簽),
-  瀏覽器第一次會跳安全警告,點「進階 → 繼續前往」即可;想要沒有警告就用 `cert_file`/`key_file` 自備憑證。
+  瀏覽器第一次會跳安全警告,點「進階 → 繼續前往」即可。想要沒有警告、順便擋掉區網內的冒充風險,
+  把憑證裝進系統信任(macOS):
+
+  ```sh
+  scp rm2:/home/root/.config/rm2-scribe/web-cert.pem ~/Downloads/rm2-cert.pem
+  ```
+
+  ```sh
+  sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain ~/Downloads/rm2-cert.pem
+  ```
+
+  也可以改用 `cert_file`/`key_file` 自備憑證。
 - 想完全不對區網開放,就綁 `127.0.0.1:8443` 再用 SSH 轉發:
 
   ```sh

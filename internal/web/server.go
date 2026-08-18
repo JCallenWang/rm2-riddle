@@ -417,6 +417,14 @@ func displayAddr(listen string) string {
 		return listen
 	}
 	if host == "" || host == "0.0.0.0" || host == "::" {
+		// mDNS 名稱(remarkable.local)不是每個網路都查得到 A 記錄——實測有的環境
+		// 只回一個失效的 IPv6 link-local,瀏覽器會直接 unreachable。
+		// 印實際的區網 IP 比較可靠,可以直接複製貼上。
+		for _, ip := range localIPs() {
+			if !ip.IsLoopback() {
+				return net.JoinHostPort(ip.String(), port)
+			}
+		}
 		return net.JoinHostPort("remarkable.local", port)
 	}
 	return listen

@@ -41,3 +41,5 @@ rm2-scribe:在 reMarkable 2 上讀取手寫、送 Claude 視覺辨識+回覆、�
   否則會在落筆狀態下離開,xochitl 會卡在「筆還按著」。
 - `config.Save` 只改動有變的那一行(保留註解與原本的寫法),並先寫 `.bak`;改它時務必跑 `go test ./internal/config/`。
 - 本機調版面:`go run ./cmd/poc-web`,不需要裝置。
+- 連不上網頁時先排除這兩個:裝置休眠會關 WiFi(閒置約 20 分鐘,`xochitl.conf` 的 `IdleSuspendDelay`),
+  以及 `remarkable.local` 在某些網路查不到 A 記錄(只回失效的 IPv6 link-local)——用 IP 連,啟動日誌會印。
