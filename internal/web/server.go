@@ -46,9 +46,9 @@ var models = []struct {
 	ID    string `json:"id"`
 	Label string `json:"label"`
 }{
-	{"claude-opus-5", "Opus — 最強,複雜任務"},
-	{"claude-sonnet-5", "Sonnet — 能力與速度兼顧"},
-	{"claude-haiku-4-5", "Haiku — 最快、最省"},
+	{"claude-opus-5", "Opus"},
+	{"claude-sonnet-5", "Sonnet"},
+	{"claude-haiku-4-5", "Haiku"},
 }
 
 // Options 由主程式提供。
@@ -199,10 +199,11 @@ func (s *server) handleState(w http.ResponseWriter, r *http.Request) {
 		"models":           models,
 		"has_key":          cfg.LLM.APIKey != "",
 		"current_notebook": current,
-		"gate_open":        cfg.Trigger.Notebook == "" || current == cfg.Trigger.Notebook,
-		"pid":              os.Getpid(),
-		"uptime":           time.Since(s.started).Round(time.Second).String(),
-		"busy":             s.busy != nil && s.busy(),
+		// notebook 留空 = 停用,閘門永遠關著
+		"gate_open": cfg.Trigger.Notebook != "" && current == cfg.Trigger.Notebook,
+		"pid":       os.Getpid(),
+		"uptime":    time.Since(s.started).Round(time.Second).String(),
+		"busy":      s.busy != nil && s.busy(),
 	})
 }
 

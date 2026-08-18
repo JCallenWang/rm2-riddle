@@ -84,7 +84,7 @@
       <label><span>限定筆記本</span><input id="notebook" placeholder="Tom" autocapitalize="off"></label>
       <label><span>停筆幾秒後送出</span><input id="idle_seconds" type="number" min="1" max="300" step="1"></label>
     </div>
-    <div class="hint">留空 = 所有筆記本都回應。名稱要和裝置上的筆記本完全一致。</div>
+    <div class="hint">名稱要和裝置上的筆記本完全一致。<b>留空 = 停用服務</b>(不偵測任何筆記本)。</div>
   </section>
 
   <section>
@@ -162,9 +162,9 @@ function fillModels(list, current){
 
 function renderStat(s){
   const c = s.config;
-  const gate = s.config.notebook
-    ? (s.gate_open ? `<span class="ok">開啟中</span>` : `<span class="bad">關閉(未在目標筆記本)</span>`)
-    : `<span class="ok">全部筆記本</span>`;
+  const gate = !s.config.notebook
+    ? `<span class="bad">停用(未指定筆記本)</span>`
+    : (s.gate_open ? `<span class="ok">開啟中</span>` : `<span class="bad">關閉(未在目標筆記本)</span>`);
   $("stat").innerHTML =
     `<div>PID <b>${s.pid}</b></div>`+
     `<div>已執行 <b>${s.uptime}</b></div>`+

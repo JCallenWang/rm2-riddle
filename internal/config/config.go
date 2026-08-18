@@ -20,7 +20,7 @@ type Config struct {
 	Trigger struct {
 		Mode        string
 		IdleSeconds float64
-		Notebook    string // 限定專屬筆記本的可見名稱;空 = 所有筆記本都觸發
+		Notebook    string // 限定專屬筆記本的可見名稱;留空 = 停用服務(不偵測任何筆記本)
 	}
 	Animation struct {
 		WriteSpeed  float64

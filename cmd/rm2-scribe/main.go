@@ -8,6 +8,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -112,8 +113,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("載入設定失敗: %v", err)
 	}
-	log.Printf("rm2-scribe 啟動:model=%s idle=%.0fs notebook=%q fadeout=%.0fs",
-		cfg.LLM.Model, cfg.Trigger.IdleSeconds, cfg.Trigger.Notebook, cfg.Animation.LLMFadeout)
+	notebookDesc := fmt.Sprintf("%q", cfg.Trigger.Notebook)
+	if cfg.Trigger.Notebook == "" {
+		notebookDesc = "(未指定 → 停用)"
+	}
+	log.Printf("rm2-scribe 啟動:model=%s idle=%.0fs notebook=%s fadeout=%.0fs",
+		cfg.LLM.Model, cfg.Trigger.IdleSeconds, notebookDesc, cfg.Animation.LLMFadeout)
 
 	provider, err := llm.New(llm.Config{
 		Provider:     cfg.LLM.Provider,
@@ -176,10 +181,15 @@ func main() {
 
 // watchNotebook 監看目前打開的筆記本;非指定筆記本時關閉閘門(不累積),
 // 當「從指定筆記本切走/關閉」時,清除緩衝、暫存與筆記本內容。
+//
+// notebook 留空 = 停用:閘門永遠關著,任何筆記本都不偵測、不回應。
+// (刻意不採「留空 = 全部筆記本」,避免在任何一本筆記上寫字都被吸走。)
 func watchNotebook(cfg config.Config, reader *input.Reader, stop <-chan struct{}) {
 	target := cfg.Trigger.Notebook
 	if target == "" {
-		return // 未限定筆記本
+		reader.Gate(true)
+		log.Printf("設定未指定筆記本(notebook 留空),服務停用——不會偵測任何筆記本")
+		return
 	}
 	prevOpen := false
 	t := time.NewTicker(1 * time.Second)
@@ -206,8 +216,9 @@ func watchNotebook(cfg config.Config, reader *input.Reader, stop <-chan struct{}
 }
 
 func handle(cfg config.Config, provider llm.Provider, inj *injCtl, b input.Batch) {
-	// 雙重確認:目前確實在指定筆記本(閘門已把關,這裡再防邊界情況)
-	if cfg.Trigger.Notebook != "" && xochitl.CurrentName() != cfg.Trigger.Notebook {
+	// 雙重確認:目前確實在指定筆記本(閘門已把關,這裡再防邊界情況)。
+	// 未指定筆記本時服務停用,一律略過。
+	if cfg.Trigger.Notebook == "" || xochitl.CurrentName() != cfg.Trigger.Notebook {
 		log.Printf("非指定筆記本,略過此次觸發")
 		return
 	}

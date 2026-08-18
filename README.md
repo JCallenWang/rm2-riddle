@@ -65,7 +65,7 @@ max_tokens = 500
 [trigger]
 mode = "idle_timeout"        # 停筆逾時觸發
 idle_seconds = 8             # 停筆 N 秒後送出
-notebook = "Tom"             # 只在這本筆記本回應;留空 "" = 所有筆記本
+notebook = "Tom"             # 只在這本筆記本回應;留空 "" = 停用服務
 
 [animation]
 write_speed = 1.0            # 回放速度倍率,越小寫得越慢(浮現越慢)
