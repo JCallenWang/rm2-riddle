@@ -194,12 +194,26 @@ P1、P2 是本專案僅存的「可行性」風險,**先做這兩個 PoC,任一�
 | E 直寫注入(畫筆/橡皮擦) | `internal/pen/uinput.go` | ✅ P1 實機驗證 |
 | F 主程式+設定+systemd | `cmd/rm2-scribe/`, `deploy/` | ✅ 實機常駐運作 |
 | 筆記本偵測(name↔uuid、頁面路徑) | `internal/xochitl/current.go` | ✅ 實機驗證 |
+| G 網頁設定介面(HTTPS) | `internal/web/`, `internal/config/save.go` | ✅ 實機驗證(2026-08-18) |
 
 **重要修正 — 讀寫共用節點的回授迴圈:** reader 與 injector 同開 `/dev/input/event1`,注入的回覆筆劃會被自己讀回、當成新手寫 → 無限迴圈。解法:`input.Reader.Mute()/Unmute()`,在讀取源頭(goroutine 內)丟棄靜音期間事件並清空累積,`handle()` 注入前 Mute、注入後留 300ms 讓事件流盡再 Unmute。
 
 **零相依決策:** LLM 呼叫用 `net/http` 直打 Anthropic Messages API,不引官方 SDK(維持 armv7 + CGO_ENABLED=0 靜態、最小體積)。
 
 **3.28 韌體相容修正(2026-08-17):** OS 更新後程式「無反應且零日誌」。除了 systemd unit 被清除(§4-7),真正的靜默失效點是 `xochitl.conf` 的 `LastOpen` 值格式從純 uuid 變成 Qt QSettings 的 `@ByteArray(<uuid>)`,舊解析把整串當 uuid → 找不到 `.metadata` → 筆記本名稱為空 → 閘門常閉、筆劃全被丟棄。修正:`xochitl.parseLastOpen()` 剝除 `@Type(...)` 包裝(附單元測試),並在進入指定筆記本時記錄日誌,讓閘門狀態可觀測。
+
+**網頁設定介面(2026-08-18 新增):** 裝置上開一個 HTTPS 服務讓瀏覽器改 `config.toml`。設計取捨:
+
+- **認證與曝險:** 設定檔含 API key,所以對外綁定(非 127.0.0.1)而未設密碼時直接拒絕啟動;
+  API key 只進不出(表單留空 = 不變)。憑證預設自簽(ECDSA P-256,armv7 上產生近乎瞬間;
+  RSA-2048 要數秒),SAN 涵蓋 `remarkable.local` 與當下 IP,DHCP 換位址會自動重簽。
+- **CSRF:** 所有寫入端點要求 `Content-Type: application/json`,瀏覽器對跨站的 JSON POST 會先送
+  preflight,而服務不回任何 CORS 標頭 → 擋掉外部網頁偷送表單。
+- **套用方式:** 寫檔後 `os.Exit(0)`,由 systemd `Restart=always` 帶新設定重啟(`RestartSec` 調成 2 秒)。
+  比熱重載簡單可靠(LLM client、reader 逾時都會重新初始化)。**重啟前必須等 `injCtl.Busy()` 結束**,
+  否則會在筆「按下」的狀態中途結束,xochitl 會卡住。
+- **寫回設定檔:** `config.Save` 不重新序列化整份檔案,而是只換掉有變動的那一行(保留註解、對齊與
+  `1.0` 這類寫法),並先留 `.bak`、以暫存檔 + rename 寫入。實機驗證:原值回存後檔案 md5 不變。
 
 **端到端狀態:** 已於實機完成閉環驗證(手寫→停筆觸發→擦除吸收→LLM 回覆逐劃浮現→逾時自動擦除)。部署:`deploy/install.sh`(交叉編譯→scp→啟用 systemd,全落 /home/root)。
 

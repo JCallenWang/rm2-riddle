@@ -14,6 +14,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -172,4 +173,52 @@ func RecognizeFile(ctx context.Context, p Provider, path string) (string, error)
 		return "", err
 	}
 	return p.Recognize(ctx, data)
+}
+
+// Ping 用一個最小的請求(max_tokens=1)驗證 API key 與 model 是否可用,
+// 供設定介面的「測試 API key」使用;成功回傳 nil。
+func Ping(ctx context.Context, c Config) error {
+	if c.APIKey == "" {
+		return fmt.Errorf("尚未填入 API key")
+	}
+	if c.Provider != "" && c.Provider != "claude" {
+		return fmt.Errorf("目前只支援 provider=claude(收到 %q)", c.Provider)
+	}
+	if c.Model == "" {
+		c.Model = "claude-sonnet-5"
+	}
+
+	buf, err := json.Marshal(anthReq{
+		Model:     c.Model,
+		MaxTokens: 1,
+		Messages:  []anthMsg{{Role: "user", Content: []anthBlock{{Type: "text", Text: "ping"}}}},
+	})
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		"https://api.anthropic.com/v1/messages", bytes.NewReader(buf))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("content-type", "application/json")
+	req.Header.Set("x-api-key", c.APIKey)
+	req.Header.Set("anthropic-version", "2023-06-01")
+
+	resp, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
+	if err != nil {
+		return fmt.Errorf("連線失敗: %w", err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+
+	var ar anthResp
+	_ = json.Unmarshal(raw, &ar)
+	if ar.Error != nil {
+		return fmt.Errorf("%s: %s", ar.Error.Type, ar.Error.Message)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
+	}
+	return nil
 }

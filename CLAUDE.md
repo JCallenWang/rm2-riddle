@@ -31,4 +31,13 @@ rm2-scribe:在 reMarkable 2 上讀取手寫、送 Claude 視覺辨識+回覆、�
 - `internal/font` 單線字型+排版(回寫用)
 - `internal/pen` event1 筆事件注入
 - `cmd/rm2-scribe` 主程式;`cmd/poc-*` 各階段實機驗證用 POC
+- `internal/web` 網頁設定介面(HTTPS、自簽憑證、Basic auth;`config.Save` 負責保留註解地寫回 TOML)
 - `deploy/` config 範本、systemd unit、部署腳本
+
+## 網頁設定介面
+
+- 預設關閉(`[web].enabled`);對外綁定(非 127.0.0.1)而沒設密碼時**拒絕啟動**——設定檔裡有 API key。
+- 套用設定的方式是「寫檔 → `os.Exit(0)` → systemd 重新拉起」,不做熱重載;重啟前會等 `injCtl.Busy()` 結束,
+  否則會在落筆狀態下離開,xochitl 會卡在「筆還按著」。
+- `config.Save` 只改動有變的那一行(保留註解與原本的寫法),並先寫 `.bak`;改它時務必跑 `go test ./internal/config/`。
+- 本機調版面:`go run ./cmd/poc-web`,不需要裝置。

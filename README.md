@@ -77,6 +77,40 @@ clear_mode = "region"        # region=只清內容範圍(快、乾淨) | page=�
 
 改完設定重啟:`ssh root@10.11.99.1 'systemctl restart rm2-scribe'`
 
+## 網頁設定介面(選用)
+
+不想每次都 SSH 進去改設定的話,可以開啟裝置上的網頁介面:用瀏覽器(手機也行)編輯設定、
+測試 API key、看即時日誌、重啟服務。介面走 HTTPS,預設關閉。
+
+編輯 `config.toml` 的 `[web]` 區塊後重啟服務:
+
+```toml
+[web]
+enabled   = true
+listen    = "0.0.0.0:8443"   # 同網段可連;改成 127.0.0.1:8443 則只能本機
+password  = "自己設一組"      # 帳號固定 admin;對區網開放時必填
+cert_file = ""               # 留空 = 自動產生自簽憑證
+key_file  = ""
+```
+
+接著開 `https://remarkable.local:8443/`。
+
+- **設定檔裡有 API key**,所以對外開放(非 127.0.0.1)卻沒設密碼時,介面會拒絕啟動並在日誌說明。
+- API key 永遠不會回傳給瀏覽器;表單留空 = 維持原值。
+- 憑證是自動產生的自簽憑證(SAN 涵蓋 `remarkable.local` 與裝置當下的 IP,DHCP 換位址會自動重簽),
+  瀏覽器第一次會跳安全警告,點「進階 → 繼續前往」即可;想要沒有警告就用 `cert_file`/`key_file` 自備憑證。
+- 想完全不對區網開放,就綁 `127.0.0.1:8443` 再用 SSH 轉發:
+
+  ```sh
+  ssh -L 8443:localhost:8443 rm2
+  ```
+
+  然後開 `https://localhost:8443/`,加密與認證都由 SSH 負責。
+- 按「儲存並套用」= 寫回 `config.toml` 後結束程式,由 systemd 重新拉起載入新設定
+  (正在寫回覆時會等筆劃寫完才重啟,避免筆停在落下狀態)。寫檔前會留一份 `config.toml.bak`。
+
+本機調版面用:`go run ./cmd/poc-web`(不需要裝置)。
+
 ## 使用
 
 1. 在 reMarkable 建立(或指定)一本筆記本,名稱與 `config.toml` 的 `notebook` 一致
@@ -87,13 +121,14 @@ clear_mode = "region"        # region=只清內容範圍(快、乾淨) | page=�
 
 ```
 cmd/rm2-scribe/      主程式(串接全流程)
-cmd/poc-*/           各階段驗證用 PoC(注入、讀取、擷取、字型、擦除)
+cmd/poc-*/           各階段驗證用 PoC(注入、讀取、擷取、字型、擦除、網頁介面本機預覽)
 internal/input/      監聽筆劃、停筆逾時聚合、mute/gate/clear
 internal/render/     筆劃 → PNG
 internal/llm/        Anthropic Messages API(net/http 零相依)
 internal/font/       單線向量字型 + 排版
 internal/pen/        直寫 /dev/input/event1 注入(畫筆 / 橡皮擦)
-internal/xochitl/    偵測目前筆記本、name↔uuid、頁面路徑
+internal/xochitl/    偵測目前筆記本、name↔uuid、頁面路徑、筆記本清單
+internal/web/        網頁設定介面(HTTPS + 自簽憑證,零相依 net/http)
 internal/config/     零相依 TOML 子集解析
 deploy/              config 範本、systemd unit、install.sh
 ```

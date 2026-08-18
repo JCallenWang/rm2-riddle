@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>rm2-scribe 設定</title>
+<style>
+  :root{
+    --bg:#f6f6f4; --card:#fff; --fg:#1c1c1a; --muted:#6b6b66; --line:#e0e0da;
+    --accent:#2f6f4f; --accent-fg:#fff; --warn:#a33; --ok:#2f6f4f; --code:#f0f0ec;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{ --bg:#16171a; --card:#1e2024; --fg:#e8e8e4; --muted:#9a9a94; --line:#2e3136;
+           --accent:#4c9c74; --accent-fg:#0d0f10; --warn:#e07070; --ok:#6cc79a; --code:#15171a; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:16px;background:var(--bg);color:var(--fg);
+       font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans TC",sans-serif}
+  .wrap{max-width:720px;margin:0 auto}
+  h1{font-size:20px;margin:0 0 4px}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:18px}
+  section{background:var(--card);border:1px solid var(--line);border-radius:10px;
+          padding:14px 16px;margin-bottom:14px}
+  h2{font-size:14px;margin:0 0 12px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+  label{display:block;margin-bottom:12px}
+  label span{display:block;font-size:13px;color:var(--muted);margin-bottom:4px}
+  input,select,textarea{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:7px;
+        background:var(--bg);color:var(--fg);font:inherit;font-size:15px}
+  textarea{min-height:78px;resize:vertical}
+  .row{display:flex;gap:12px;flex-wrap:wrap}
+  .row>label{flex:1 1 150px}
+  button{padding:10px 16px;border:1px solid var(--line);border-radius:8px;background:var(--card);
+         color:var(--fg);font:inherit;cursor:pointer}
+  button.primary{background:var(--accent);color:var(--accent-fg);border-color:transparent;font-weight:600}
+  button.danger{color:var(--warn)}
+  button:disabled{opacity:.5;cursor:default}
+  .btns{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .stat{display:flex;flex-wrap:wrap;gap:8px 20px;font-size:14px}
+  .stat div{white-space:nowrap}
+  .stat b{font-weight:600}
+  .ok{color:var(--ok)} .bad{color:var(--warn)}
+  .hint{font-size:12px;color:var(--muted);margin-top:-6px;margin-bottom:12px}
+  pre{background:var(--code);border:1px solid var(--line);border-radius:8px;padding:10px;
+      overflow:auto;max-height:340px;font-size:12px;line-height:1.5;margin:0;
+      white-space:pre-wrap;word-break:break-word}
+  #toast{position:fixed;left:50%;transform:translateX(-50%);bottom:20px;background:var(--fg);
+         color:var(--bg);padding:10px 16px;border-radius:8px;font-size:14px;opacity:0;
+         transition:opacity .2s;pointer-events:none;max-width:90vw}
+  #toast.show{opacity:.95}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>rm2-scribe 設定</h1>
+  <div class="sub">改完按「儲存並套用」,程式會重新啟動載入新設定。</div>
+
+  <section>
+    <h2>狀態</h2>
+    <div class="stat" id="stat">讀取中…</div>
+  </section>
+
+  <section>
+    <h2>LLM</h2>
+    <label><span>API key</span>
+      <input id="api_key" type="password" autocomplete="off" placeholder="留空 = 維持原本的 key"></label>
+    <div class="hint" id="keyhint"></div>
+    <div class="row">
+      <label><span>model</span><input id="model"></label>
+      <label><span>max_tokens</span><input id="max_tokens" type="number" min="1" max="8192"></label>
+    </div>
+    <label><span>system_prompt</span><textarea id="system_prompt"></textarea></label>
+    <div class="btns">
+      <button type="button" id="btn-test">測試 API key</button>
+      <span id="testresult"></span>
+    </div>
+  </section>
+
+  <section>
+    <h2>觸發</h2>
+    <div class="row">
+      <label><span>限定筆記本</span><select id="notebook"></select></label>
+      <label><span>停筆幾秒後送出</span><input id="idle_seconds" type="number" min="1" max="300" step="1"></label>
+    </div>
+  </section>
+
+  <section>
+    <h2>書寫動畫</h2>
+    <div class="row">
+      <label><span>write_speed(越小越慢)</span><input id="write_speed" type="number" step="0.1" min="0.1" max="10"></label>
+      <label><span>font_size_px</span><input id="font_size_px" type="number" step="1" min="10" max="200"></label>
+    </div>
+    <div class="row">
+      <label><span>line_spacing</span><input id="line_spacing" type="number" step="0.1" min="0.5" max="5"></label>
+      <label><span>llm_fadeout 秒(0=不消失)</span><input id="llm_fadeout" type="number" step="1" min="0" max="3600"></label>
+    </div>
+    <label><span>clear_mode</span>
+      <select id="clear_mode"><option value="region">region(只清內容範圍,快)</option><option value="page">page(整頁)</option></select>
+    </label>
+  </section>
+
+  <section>
+    <h2>網頁介面</h2>
+    <div class="row">
+      <label><span>listen</span><input id="web_listen" placeholder="0.0.0.0:8443"></label>
+      <label><span>網頁密碼</span><input id="web_password" type="password" autocomplete="new-password" placeholder="留空 = 不變"></label>
+    </div>
+    <div class="hint">綁 0.0.0.0 = 同網段都能連(必須設密碼);綁 127.0.0.1 = 只能透過 SSH 埠轉發存取。</div>
+    <label><span><input type="checkbox" id="web_enabled" style="width:auto;margin-right:6px">啟用網頁設定介面</span></label>
+    <div class="hint">關掉之後只能改回 SSH 編輯設定檔。</div>
+  </section>
+
+  <section>
+    <h2>套用</h2>
+    <div class="btns">
+      <button type="button" class="primary" id="btn-save">儲存並套用</button>
+      <button type="button" id="btn-restart">只重新啟動</button>
+      <button type="button" class="danger" id="btn-stop">停止服務</button>
+    </div>
+    <div class="hint" style="margin-top:10px">停止後需要 SSH 執行 <code>systemctl start rm2-scribe</code> 才會回來。</div>
+  </section>
+
+  <section>
+    <h2>日誌</h2>
+    <div class="btns" style="margin-bottom:10px">
+      <button type="button" id="btn-logs">重新整理</button>
+      <label style="margin:0;display:flex;align-items:center;gap:6px;font-size:13px">
+        <input type="checkbox" id="autolog" style="width:auto"> 自動更新
+      </label>
+      <select id="logn" style="width:auto"><option>40</option><option selected>80</option><option>200</option><option>500</option></select>
+    </div>
+    <pre id="logs">尚未載入</pre>
+  </section>
+</div>
+<div id="toast"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const FIELDS = ["model","max_tokens","system_prompt","idle_seconds","write_speed",
+                "font_size_px","line_spacing","llm_fadeout","clear_mode","web_listen"];
+let provider = "claude";
+
+function toast(msg, ms=2600){
+  const t = $("toast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(t._h); t._h = setTimeout(()=>t.classList.remove("show"), ms);
+}
+
+async function api(path, opts={}){
+  const r = await fetch(path, opts);
+  const ct = r.headers.get("content-type")||"";
+  const body = ct.includes("json") ? await r.json() : await r.text();
+  if(!r.ok) throw new Error((body && body.error) || r.status+" "+r.statusText);
+  return body;
+}
+
+function fillNotebooks(list, current){
+  const sel = $("notebook");
+  sel.innerHTML = "";
+  const opts = [["","(所有筆記本)"]].concat(list.map(n=>[n,n]));
+  if(current && !list.includes(current)) opts.push([current, current+"(裝置上找不到)"]);
+  for(const [v,label] of opts){
+    const o = document.createElement("option");
+    o.value = v; o.textContent = label;
+    if(v === current) o.selected = true;
+    sel.appendChild(o);
+  }
+}
+
+function renderStat(s){
+  const c = s.config;
+  const gate = s.config.notebook
+    ? (s.gate_open ? `<span class="ok">開啟中</span>` : `<span class="bad">關閉(未在目標筆記本)</span>`)
+    : `<span class="ok">全部筆記本</span>`;
+  $("stat").innerHTML =
+    `<div>PID <b>${s.pid}</b></div>`+
+    `<div>已執行 <b>${s.uptime}</b></div>`+
+    `<div>目前開啟 <b>${s.current_notebook || "(檔案清單)"}</b></div>`+
+    `<div>接收閘門 <b>${gate}</b></div>`+
+    (s.busy ? `<div class="bad">正在寫入筆劃…</div>` : "");
+  $("keyhint").textContent = s.has_key ? "目前已設定 API key。" : "尚未設定 API key,程式無法回覆。";
+}
+
+async function load(){
+  const s = await api("/api/state");
+  provider = s.config.provider || "claude";
+  for(const f of FIELDS) $(f).value = s.config[f];
+  $("web_enabled").checked = s.config.web_enabled;
+  fillNotebooks(s.notebooks||[], s.config.notebook||"");
+  renderStat(s);
+}
+
+async function save(apply){
+  const body = { provider, apply,
+    model: $("model").value.trim(),
+    max_tokens: +$("max_tokens").value,
+    system_prompt: $("system_prompt").value,
+    idle_seconds: +$("idle_seconds").value,
+    notebook: $("notebook").value,
+    write_speed: +$("write_speed").value,
+    font_size_px: +$("font_size_px").value,
+    line_spacing: +$("line_spacing").value,
+    llm_fadeout: +$("llm_fadeout").value,
+    clear_mode: $("clear_mode").value,
+    web_enabled: $("web_enabled").checked,
+    web_listen: $("web_listen").value.trim(),
+    api_key: $("api_key").value,
+    web_password: $("web_password").value,
+  };
+  $("btn-save").disabled = true;
+  try{
+    await api("/api/config", {method:"POST", headers:{"Content-Type":"application/json"},
+                              body: JSON.stringify(body)});
+    $("api_key").value = ""; $("web_password").value = "";
+    if(apply){ toast("已儲存,重新啟動中…"); waitBack(); }
+    else toast("已儲存");
+  }catch(e){ toast("儲存失敗:"+e.message, 5000); }
+  finally{ $("btn-save").disabled = false; }
+}
+
+// 重新啟動後輪詢直到服務回來(systemd 拉起需要幾秒)
+async function waitBack(){
+  for(let i=0;i<20;i++){
+    await new Promise(r=>setTimeout(r,1500));
+    try{ await load(); toast("已套用,服務已回來"); return; }catch(e){}
+  }
+  toast("服務尚未回來,請檢查日誌或 SSH 確認", 6000);
+}
+
+async function testKey(){
+  $("btn-test").disabled = true; $("testresult").textContent = "測試中…";
+  try{
+    const r = await api("/api/test-key", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({api_key: $("api_key").value, model: $("model").value.trim()})});
+    $("testresult").innerHTML = r.ok ? '<span class="ok">可以使用 ✓</span>'
+                                     : '<span class="bad">失敗:'+r.error+'</span>';
+  }catch(e){ $("testresult").innerHTML = '<span class="bad">'+e.message+'</span>'; }
+  finally{ $("btn-test").disabled = false; }
+}
+
+async function service(action){
+  if(action==="stop" && !confirm("停止後網頁也會關閉,需要 SSH 才能再啟動。確定?")) return;
+  try{
+    const r = await api("/api/service", {method:"POST", headers:{"Content-Type":"application/json"},
+                                         body: JSON.stringify({action})});
+    toast(r.message||"已送出");
+    if(action==="restart") waitBack();
+  }catch(e){ toast("失敗:"+e.message, 5000); }
+}
+
+async function loadLogs(){
+  try{
+    const t = await api("/api/logs?n="+$("logn").value);
+    const pre = $("logs"); pre.textContent = t;
+    pre.scrollTop = pre.scrollHeight;
+  }catch(e){ $("logs").textContent = "讀取失敗:"+e.message; }
+}
+
+$("btn-save").onclick = ()=>save(true);
+$("btn-restart").onclick = ()=>service("restart");
+$("btn-stop").onclick = ()=>service("stop");
+$("btn-test").onclick = testKey;
+$("btn-logs").onclick = loadLogs;
+$("logn").onchange = loadLogs;
+let logTimer = null;
+$("autolog").onchange = e => {
+  clearInterval(logTimer);
+  if(e.target.checked){ loadLogs(); logTimer = setInterval(loadLogs, 3000); }
+};
+
+load().catch(e=>toast("載入設定失敗:"+e.message, 6000));
+loadLogs();
+</script>
+</body>
+</html>

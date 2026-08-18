@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -90,6 +91,47 @@ func UUIDByName(name string) string {
 		}
 	}
 	return ""
+}
+
+// ListNotebooks 回傳裝置上所有可見筆記本(DocumentType、未刪除)的名稱,已排序去重。
+// 供設定介面列出可選的筆記本,避免手動輸入打錯名稱。
+func ListNotebooks() []string {
+	entries, err := os.ReadDir(dataDir)
+	if err != nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, e := range entries {
+		n := e.Name()
+		if !strings.HasSuffix(n, ".metadata") {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dataDir, n))
+		if err != nil {
+			continue
+		}
+		s := string(data)
+		if strings.Contains(s, `"deleted": true`) || !strings.Contains(s, `"type": "DocumentType"`) {
+			continue
+		}
+		// 在垃圾桶裡的不列出
+		if strings.Contains(s, `"parent": "trash"`) {
+			continue
+		}
+		m := visibleNameRe.FindStringSubmatch(s)
+		if m == nil {
+			continue
+		}
+		name := strings.ReplaceAll(m[1], `\"`, `"`)
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // PageDir 回傳某文件的頁面筆劃檔目錄。

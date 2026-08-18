@@ -32,6 +32,13 @@ type Config struct {
 	Capture struct {
 		Method string
 	}
+	Web struct {
+		Enabled  bool
+		Listen   string // 監聽位址;127.0.0.1 = 僅本機(需 SSH 轉發),0.0.0.0 = 區網可存取
+		Password string // HTTP Basic 密碼(帳號固定 admin);對外綁定時必填
+		CertFile string // 自備 TLS 憑證;留空 = 首次啟動自動產生自簽憑證
+		KeyFile  string
+	}
 }
 
 // Default 提供合理預設(對應 DEVELOPMENT.md 的決議)。
@@ -49,6 +56,8 @@ func Default() Config {
 	c.Animation.LLMFadeout = 30
 	c.Animation.ClearMode = "region"
 	c.Capture.Method = "strokes"
+	c.Web.Enabled = false
+	c.Web.Listen = "127.0.0.1:8443"
 	return c
 }
 
@@ -126,29 +135,54 @@ func Load(path string) (Config, error) {
 			if key == "method" {
 				c.Capture.Method = sv
 			}
+		case "web":
+			switch key {
+			case "enabled":
+				c.Web.Enabled = atob(val, c.Web.Enabled)
+			case "listen":
+				c.Web.Listen = sv
+			case "password":
+				c.Web.Password = sv
+			case "cert_file":
+				c.Web.CertFile = sv
+			case "key_file":
+				c.Web.KeyFile = sv
+			}
 		}
 	}
 	return c, sc.Err()
 }
 
 func stripComment(s string) string {
-	inQ := false
-	for i, r := range s {
-		if r == '"' {
-			inQ = !inQ
-		}
-		if r == '#' && !inQ {
-			return s[:i]
-		}
+	if i := commentIndex(s); i >= 0 {
+		return s[:i]
 	}
 	return s
 }
 
+// unquote 去掉外層雙引號並還原跳脫字元(與 save.go 的 quote 對稱)。
 func unquote(s string) string {
-	if len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"' {
-		return s[1 : len(s)-1]
+	if len(s) < 2 || s[0] != '"' || s[len(s)-1] != '"' {
+		return s
 	}
-	return s
+	inner := s[1 : len(s)-1]
+	var b strings.Builder
+	for i := 0; i < len(inner); i++ {
+		if inner[i] == '\\' && i+1 < len(inner) {
+			i++
+			switch inner[i] {
+			case 'n':
+				b.WriteByte('\n')
+			case 't':
+				b.WriteByte('\t')
+			default:
+				b.WriteByte(inner[i])
+			}
+			continue
+		}
+		b.WriteByte(inner[i])
+	}
+	return b.String()
 }
 
 func atoi(s string, def int) int {
@@ -161,6 +195,13 @@ func atoi(s string, def int) int {
 func atof(s string, def float64) float64 {
 	if n, err := strconv.ParseFloat(strings.TrimSpace(unquote(s)), 64); err == nil {
 		return n
+	}
+	return def
+}
+
+func atob(s string, def bool) bool {
+	if b, err := strconv.ParseBool(strings.TrimSpace(unquote(s))); err == nil {
+		return b
 	}
 	return def
 }

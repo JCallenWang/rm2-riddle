@@ -6,7 +6,7 @@ After=xochitl.service
 Type=simple
 ExecStart=/home/root/rm2-scribe/rm2-scribe
 Restart=always
-RestartSec=5
+RestartSec=2
 
 [Install]
 WantedBy=multi-user.target

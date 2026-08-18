@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -23,6 +24,7 @@ import (
 	"rm2scribe/internal/llm"
 	"rm2scribe/internal/pen"
 	"rm2scribe/internal/render"
+	"rm2scribe/internal/web"
 	"rm2scribe/internal/xochitl"
 )
 
@@ -54,7 +56,12 @@ type injCtl struct {
 	dev    *pen.Device
 	reader *input.Reader
 	mu     sync.Mutex
+	busy   atomic.Bool
 }
+
+// Busy 回報目前是否正在注入;網頁介面要求重新啟動時會先等它結束,
+// 以免在落筆狀態下結束程式,讓 xochitl 卡在「筆還按著」。
+func (c *injCtl) Busy() bool { return c.busy.Load() }
 
 func (c *injCtl) draw(strokes [][]pen.Point, stepPx float64, dt, gap time.Duration) {
 	c.run(func() {
@@ -88,6 +95,8 @@ func (c *injCtl) erase(strokes [][]pen.Point, stepPx float64, dt time.Duration) 
 func (c *injCtl) run(fn func()) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.busy.Store(true)
+	defer c.busy.Store(false)
 	c.reader.Mute()
 	fn()
 	time.Sleep(300 * time.Millisecond) // 讓最後的注入事件流盡再解除靜音
@@ -129,6 +138,12 @@ func main() {
 	}
 	defer dev.Close()
 	inj := &injCtl{dev: dev, reader: reader}
+
+	// 網頁設定介面(config.toml 的 [web].enabled 決定);
+	// 起不來只記錄不中止——手寫助理本身比設定介面重要。
+	if err := web.Start(web.Options{ConfigPath: *cfgPath, Config: cfg, Busy: inj.Busy}); err != nil {
+		log.Printf("網頁設定介面未啟動: %v", err)
+	}
 
 	stop := make(chan struct{})
 	batches := make(chan input.Batch, 1)
