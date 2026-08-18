@@ -202,3 +202,42 @@ P1、P2 是本專案僅存的「可行性」風險,**先做這兩個 PoC,任一�
 **3.28 韌體相容修正(2026-08-17):** OS 更新後程式「無反應且零日誌」。除了 systemd unit 被清除(§4-7),真正的靜默失效點是 `xochitl.conf` 的 `LastOpen` 值格式從純 uuid 變成 Qt QSettings 的 `@ByteArray(<uuid>)`,舊解析把整串當 uuid → 找不到 `.metadata` → 筆記本名稱為空 → 閘門常閉、筆劃全被丟棄。修正:`xochitl.parseLastOpen()` 剝除 `@Type(...)` 包裝(附單元測試),並在進入指定筆記本時記錄日誌,讓閘門狀態可觀測。
 
 **端到端狀態:** 已於實機完成閉環驗證(手寫→停筆觸發→擦除吸收→LLM 回覆逐劃浮現→逾時自動擦除)。部署:`deploy/install.sh`(交叉編譯→scp→啟用 systemd,全落 /home/root)。
+
+## 10. 日誌與疑難排解
+
+程式的一切輸出都走 stdout/stderr,由 systemd 收進 journal。**最常用的一行:**
+
+```sh
+ssh rm2 'journalctl -u rm2-scribe -n 20 -f'
+```
+
+`-n 20` 先印最近 20 行、`-f` 接著即時跟隨(Ctrl-C 離開)。省略 `-f` 則只看歷史;`--no-pager` 適合用在腳本裡。
+
+其他常用:
+
+```sh
+ssh rm2 'systemctl status rm2-scribe'          # 服務是否 enabled / active、目前 PID
+ssh rm2 'journalctl -u rm2-scribe --since "10 min ago"'
+ssh rm2 'systemctl restart rm2-scribe'         # 改完 config.toml 後套用
+```
+
+一次正常的互動,日誌應依序出現:
+
+```
+rm2-scribe 啟動:model=… idle=8s notebook="…" fadeout=…s
+等待手寫(停筆 8 秒後送出)…
+進入筆記本 "…",開始接收手寫      ← 閘門已開(限定筆記本時才有)
+擷取到 N 筆劃 / M 點               ← 停筆逾時已觸發
+吸收使用者手寫…
+LLM 回覆:…
+```
+
+依「日誌卡在哪一行」對照:
+
+| 症狀 | 判讀 | 處理 |
+|---|---|---|
+| `Unit rm2-scribe.service could not be found` | OS 更新換了系統分割區,unit 被清除(§4-7) | 重跑 `deploy/install.sh` |
+| 只有前兩行,手寫無反應 | 閘門常閉:`config.toml` 的 `notebook` 名稱不符,或 `LastOpen` 格式又變(§9 的 3.28 修正) | 比對 `grep LastOpen /home/root/.config/remarkable/xochitl.conf` 與 `xochitl.parseLastOpen()` |
+| 有「擷取到…」但無「LLM 回覆」 | API 呼叫失敗(key 未填/額度/連線) | 看該行後的錯誤訊息;確認裝置能連外 |
+| 回覆文字寫出後又立刻被擦掉 | `llm_fadeout` 太短 | 調大或設 `0`(不消失) |
+| 注入的字被當成新手寫、無限迴圈 | Mute/Unmute 失效(§9) | 檢查 `input.Reader` 的靜音期與注入時序 |
