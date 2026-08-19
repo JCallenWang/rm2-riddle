@@ -119,6 +119,8 @@ type field struct {
 	done              bool
 }
 
+// fields 列出所有會寫回檔案的 key。新增設定項時這裡和 Load 的 switch 都要加,
+// 漏一邊會變成「網頁按了儲存卻沒生效」——TestSaveCoversEveryConfigField 會擋下這種漏改。
 func fields(c Config) []field {
 	return []field{
 		{section: "llm", key: "provider", val: quote(c.LLM.Provider)},
@@ -129,6 +131,7 @@ func fields(c Config) []field {
 		{section: "trigger", key: "mode", val: quote(c.Trigger.Mode)},
 		{section: "trigger", key: "idle_seconds", val: num(c.Trigger.IdleSeconds)},
 		{section: "trigger", key: "notebook", val: quote(c.Trigger.Notebook)},
+		{section: "trigger", key: "min_stroke_px", val: num(c.Trigger.MinStrokePx)},
 		{section: "animation", key: "write_speed", val: num(c.Animation.WriteSpeed)},
 		{section: "animation", key: "font_size_px", val: num(c.Animation.FontSizePx)},
 		{section: "animation", key: "line_spacing", val: num(c.Animation.LineSpacing)},

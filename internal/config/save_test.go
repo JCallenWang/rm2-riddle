@@ -1,8 +1,10 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -136,4 +138,54 @@ func TestSaveUnchangedIsByteIdentical(t *testing.T) {
 			t.Errorf("未改動的行被重寫了:\n舊: %q", line)
 		}
 	}
+}
+
+// TestSaveCoversEveryConfigField 用反射填滿 Config 的每一個欄位再存檔、讀回比對,
+// 藉此擋下「新增設定項時只改了 Load 或只改了 fields()」的漏改——那種漏改的症狀是
+// 網頁按了儲存、回報成功,值卻沒有真的寫進檔案。
+func TestSaveCoversEveryConfigField(t *testing.T) {
+	var want Config
+	fillDistinct(t, reflect.ValueOf(&want).Elem())
+
+	p := filepath.Join(t.TempDir(), "config.toml")
+	if err := Save(p, want); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("有欄位沒被 Save 寫出或沒被 Load 讀回\n寫入: %+v\n讀回: %+v", want, got)
+	}
+}
+
+// fillDistinct 逐一填入互不相同的非零值,任何漏寫/漏讀的欄位都會在比對時現形。
+func fillDistinct(t *testing.T, v reflect.Value) {
+	t.Helper()
+	n := 0
+	var walk func(reflect.Value)
+	walk = func(v reflect.Value) {
+		for i := 0; i < v.NumField(); i++ {
+			f := v.Field(i)
+			if f.Kind() == reflect.Struct {
+				walk(f)
+				continue
+			}
+			n++
+			switch f.Kind() {
+			case reflect.String:
+				f.SetString(fmt.Sprintf("value-%d", n))
+			case reflect.Int:
+				f.SetInt(int64(100 + n))
+			case reflect.Float64:
+				f.SetFloat(float64(n) + 0.5)
+			case reflect.Bool:
+				f.SetBool(true)
+			default:
+				t.Fatalf("Config 出現這個測試還不會填的型別 %s;請在 fillDistinct 補上", f.Kind())
+			}
+		}
+	}
+	walk(v)
 }

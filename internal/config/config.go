@@ -20,7 +20,8 @@ type Config struct {
 	Trigger struct {
 		Mode        string
 		IdleSeconds float64
-		Notebook    string // 限定專屬筆記本的可見名稱;留空 = 停用服務(不偵測任何筆記本)
+		Notebook    string  // 限定專屬筆記本的可見名稱;留空 = 停用服務(不偵測任何筆記本)
+		MinStrokePx float64 // 筆劃範圍小於此值(螢幕 px)視為點擊誤觸,不記錄;0 = 不過濾
 	}
 	Animation struct {
 		WriteSpeed  float64
@@ -51,6 +52,7 @@ func Default() Config {
 	c.Trigger.Mode = "idle_timeout"
 	c.Trigger.IdleSeconds = 8
 	c.Trigger.Notebook = "Tom"
+	c.Trigger.MinStrokePx = 4
 	c.Animation.WriteSpeed = 1.0
 	c.Animation.FontSizePx = 44
 	c.Animation.LineSpacing = 1.5
@@ -118,6 +120,8 @@ func Load(path string) (Config, error) {
 				c.Trigger.IdleSeconds = atof(val, c.Trigger.IdleSeconds)
 			case "notebook":
 				c.Trigger.Notebook = sv
+			case "min_stroke_px":
+				c.Trigger.MinStrokePx = atof(val, c.Trigger.MinStrokePx)
 			}
 		case "animation":
 			switch key {

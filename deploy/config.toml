@@ -6,12 +6,13 @@ provider = "claude"          # "claude" | "gemini"(gemini 尚未實作)
 api_key  = ""                # ← 請填入你的 Anthropic API key
 model    = "claude-sonnet-5"
 system_prompt = "You are an assistant living inside a handwritten notebook. Reply in English, briefly and warmly."
-max_tokens = 500
+max_tokens = 500             # 送出的請求會自動附上裝置系統時鐘的當下時間(含時區)
 
 [trigger]
 mode = "idle_timeout"        # 停筆逾時觸發
 idle_seconds = 8             # 停筆 N 秒後送出
 notebook = "Tom"             # 只在這本筆記本裡才回應;留空 "" = 停用服務
+min_stroke_px = 4            # 移動範圍小於 N px 的筆劃視為點擊誤觸,丟棄不記錄;0 = 不過濾
 
 [animation]
 write_speed = 1.0            # 書寫回放速度倍率,越小越慢(浮現越慢)

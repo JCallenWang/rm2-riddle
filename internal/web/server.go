@@ -164,6 +164,7 @@ type cfgJSON struct {
 	MaxTokens    int     `json:"max_tokens"`
 	IdleSeconds  float64 `json:"idle_seconds"`
 	Notebook     string  `json:"notebook"`
+	MinStrokePx  float64 `json:"min_stroke_px"`
 	WriteSpeed   float64 `json:"write_speed"`
 	FontSizePx   float64 `json:"font_size_px"`
 	LineSpacing  float64 `json:"line_spacing"`
@@ -179,6 +180,7 @@ func toJSON(c config.Config) cfgJSON {
 		MaxTokens:    c.LLM.MaxTokens,
 		IdleSeconds:  c.Trigger.IdleSeconds,
 		Notebook:     c.Trigger.Notebook,
+		MinStrokePx:  c.Trigger.MinStrokePx,
 		WriteSpeed:   c.Animation.WriteSpeed,
 		FontSizePx:   c.Animation.FontSizePx,
 		LineSpacing:  c.Animation.LineSpacing,
@@ -235,6 +237,7 @@ func (s *server) handleSaveConfig(w http.ResponseWriter, r *http.Request) {
 	cfg.LLM.MaxTokens = req.MaxTokens
 	cfg.Trigger.IdleSeconds = req.IdleSeconds
 	cfg.Trigger.Notebook = req.Notebook
+	cfg.Trigger.MinStrokePx = req.MinStrokePx
 	cfg.Animation.WriteSpeed = req.WriteSpeed
 	cfg.Animation.FontSizePx = req.FontSizePx
 	cfg.Animation.LineSpacing = req.LineSpacing
@@ -289,6 +292,9 @@ func validate(c config.Config) error {
 	}
 	if c.Animation.ClearMode != "region" && c.Animation.ClearMode != "page" {
 		return fmt.Errorf("clear_mode 只能是 region 或 page")
+	}
+	if c.Trigger.MinStrokePx < 0 || c.Trigger.MinStrokePx > 100 {
+		return fmt.Errorf("min_stroke_px 需在 0–100 之間")
 	}
 	return nil
 }

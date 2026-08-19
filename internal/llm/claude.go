@@ -115,8 +115,12 @@ func (c *claude) Recognize(ctx context.Context, pngData []byte) (string, error) 
 				},
 				{
 					Type: "text",
-					Text: "This image shows my handwriting on an e-ink notebook. " +
+					// 時間取自裝置系統時鐘(chronyd 走 NTP 自動校時),格式含時區縮寫,
+					// 讓 LLM 知道這是哪個時區的時間,而不是憑空猜「現在」。
+					Text: fmt.Sprintf("Current date and time: %s.\n\n"+
+						"This image shows my handwriting on an e-ink notebook. "+
 						"Read it, then respond to what I wrote. Reply in English only.",
+						time.Now().Format("2006-01-02 15:04 (Mon) MST")),
 				},
 			},
 		}},

@@ -72,6 +72,7 @@
       <label><span>max_tokens</span><input id="max_tokens" type="number" min="1" max="8192"></label>
     </div>
     <label><span>system_prompt</span><textarea id="system_prompt"></textarea></label>
+    <div class="hint">送給 LLM 的請求會自動附上裝置系統時鐘的當下時間(含時區)。</div>
     <div class="btns">
       <button type="button" id="btn-test">測試 API key</button>
       <span id="testresult"></span>
@@ -85,6 +86,9 @@
       <label><span>停筆幾秒後送出</span><input id="idle_seconds" type="number" min="1" max="300" step="1"></label>
     </div>
     <div class="hint">名稱要和裝置上的筆記本完全一致。<b>留空 = 停用服務</b>(不偵測任何筆記本)。</div>
+    <label><span>忽略點擊筆劃(小於幾 px)</span><input id="min_stroke_px" type="number" step="1" min="0" max="100"></label>
+    <div class="hint">筆劃移動範圍小於此值就當成點擊誤觸(點工具列、手掌輕碰)丟掉,不記錄也不重置停筆倒數。
+      <b>0 = 不過濾</b>;調太大會連句點、i 上面的點一起吃掉。</div>
   </section>
 
   <section>
@@ -128,7 +132,7 @@
 
 <script>
 const $ = id => document.getElementById(id);
-const FIELDS = ["max_tokens","system_prompt","notebook","idle_seconds","write_speed",
+const FIELDS = ["max_tokens","system_prompt","notebook","idle_seconds","min_stroke_px","write_speed",
                 "font_size_px","line_spacing","llm_fadeout","clear_mode"];
 let provider = "claude";
 
@@ -189,6 +193,7 @@ async function save(apply){
     system_prompt: $("system_prompt").value,
     idle_seconds: +$("idle_seconds").value,
     notebook: $("notebook").value,
+    min_stroke_px: +$("min_stroke_px").value,
     write_speed: +$("write_speed").value,
     font_size_px: +$("font_size_px").value,
     line_spacing: +$("line_spacing").value,

@@ -60,12 +60,13 @@ provider = "claude"          # 目前實作 claude;架構保留 gemini
 api_key  = ""                # ← 填入你的 Anthropic API key
 model    = "claude-sonnet-5"
 system_prompt = "..."        # 建議要求 LLM 用英文簡短回覆
-max_tokens = 500
+max_tokens = 500             # 請求會自動附上裝置系統時鐘的當下時間(含時區)
 
 [trigger]
 mode = "idle_timeout"        # 停筆逾時觸發
 idle_seconds = 8             # 停筆 N 秒後送出
 notebook = "Tom"             # 只在這本筆記本回應;留空 "" = 停用服務
+min_stroke_px = 4            # 移動範圍小於 N px 的筆劃視為點擊誤觸,丟棄;0 = 不過濾
 
 [animation]
 write_speed = 1.0            # 回放速度倍率,越小寫得越慢(浮現越慢)

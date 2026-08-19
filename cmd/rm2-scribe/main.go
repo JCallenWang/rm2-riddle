@@ -117,8 +117,9 @@ func main() {
 	if cfg.Trigger.Notebook == "" {
 		notebookDesc = "(未指定 → 停用)"
 	}
-	log.Printf("rm2-scribe 啟動:model=%s idle=%.0fs notebook=%s fadeout=%.0fs",
-		cfg.LLM.Model, cfg.Trigger.IdleSeconds, notebookDesc, cfg.Animation.LLMFadeout)
+	log.Printf("rm2-scribe 啟動:model=%s idle=%.0fs notebook=%s fadeout=%.0fs min_stroke=%.0fpx now=%s",
+		cfg.LLM.Model, cfg.Trigger.IdleSeconds, notebookDesc, cfg.Animation.LLMFadeout,
+		cfg.Trigger.MinStrokePx, time.Now().Format("2006-01-02 15:04 MST"))
 
 	provider, err := llm.New(llm.Config{
 		Provider:     cfg.LLM.Provider,
@@ -136,6 +137,7 @@ func main() {
 		log.Fatalf("開啟輸入裝置失敗: %v", err)
 	}
 	defer reader.Close()
+	reader.SetMinStrokePx(cfg.Trigger.MinStrokePx)
 
 	dev, err := pen.OpenDirect(device)
 	if err != nil {
@@ -227,7 +229,11 @@ func handle(cfg config.Config, provider llm.Provider, inj *injCtl, b input.Batch
 	for _, s := range b.Strokes {
 		n += len(s)
 	}
-	log.Printf("擷取到 %d 筆劃 / %d 點", len(b.Strokes), n)
+	if b.Dropped > 0 {
+		log.Printf("擷取到 %d 筆劃 / %d 點(另丟棄 %d 筆點擊誤觸)", len(b.Strokes), n, b.Dropped)
+	} else {
+		log.Printf("擷取到 %d 筆劃 / %d 點", len(b.Strokes), n)
+	}
 
 	// 先從記憶體中的筆劃渲染 PNG(擦除頁面不影響此資料)
 	tmp := filepath.Join("/home/root/rm2-scribe", "current.png")
