@@ -21,7 +21,7 @@
 | Shell 環境 | BusyBox 1.36(注意:`head -c` 等 GNU 選項不可用,無 `ldd`) | 部署腳本需用 BusyBox 相容語法 |
 | 網路 | wlan0 已連線(DHCP),USB 網卡 10.11.99.1 | 裝置可直接對外呼叫 HTTPS API |
 | CA 憑證 | `/etc/ssl/certs/ca-certificates.crt`(301 張,2026-05 更新) | Go 的 TLS 可直接使用系統憑證 |
-| 系統時鐘 | UTC,時間正確 | TLS 握手無時鐘問題 |
+| 系統時鐘 | `chronyd` NTP 自動校時,時間正確;**時區為 UTC**(非當地時間) | TLS 握手無時鐘問題;送 LLM 的當下時間取自這裡,時區設定見 §10.1 |
 | 可用工具 | tar / gzip / scp / systemctl | 部署走 scp 即可 |
 
 ### 1.1 輸入裝置(實測 `/proc/bus/input/devices`)
@@ -204,7 +204,16 @@ P1、P2 是本專案僅存的「可行性」風險,**先做這兩個 PoC,任一�
 | 筆記本偵測(name↔uuid、頁面路徑) | `internal/xochitl/current.go` | ✅ 實機驗證 |
 | G 網頁設定介面(HTTPS) | `internal/web/`, `internal/config/save.go` | ✅ 實機驗證(2026-08-18) |
 
-**重要修正 — 讀寫共用節點的回授迴圈:** reader 與 injector 同開 `/dev/input/event1`,注入的回覆筆劃會被自己讀回、當成新手寫 → 無限迴圈。解法:`input.Reader.Mute()/Unmute()`,在讀取源頭(goroutine 內)丟棄靜音期間事件並清空累積,`handle()` 注入前 Mute、注入後留 300ms 讓事件流盡再 Unmute。
+**重要修正 — 讀寫共用節點的回授迴圈:** reader 與 injector 同開 `/dev/input/event1`,注入的回覆筆劃會被自己讀回、當成新手寫 → 無限迴圈。解法:`input.Reader.Mute()/Unmute()`,在讀取源頭(goroutine 內)丟棄靜音期間事件並清空累積,注入後留 300ms 讓事件流盡再解除。
+
+**靜音範圍 — 整段互動連續靜音(2026-08-19 修正):** 原本只有「實際在注入」的那幾段靜音,等 LLM 回應(最長 90s)與等 `llm_fadeout` 這兩段空檔是開著的,使用者在等待期間寫的字會被記錄、成為下一批送出。改為**從吸收手寫開始一路靜音到擦除回覆結束**:
+
+- `injCtl` 用巢狀計數持有靜音(`hold()` 回傳 release 函式,只有最外層放掉時才真的 `Unmute`)。`handle()` 一進來就取得外層 hold 並 `defer` 放掉,所以任何中途失敗的路徑都會恢復接收。
+- `run()`(唯一的注入入口)自己也 hold 一次,因此不存在「忘了靜音就注入」的路徑。
+- `llm_fadeout` 的等待從 goroutine 改為同步:靜音要持續到擦完,期間本來就收不到筆劃,主迴圈沒有別的事可做。
+- 解除靜音前會 `ClearBuffer()`——靜音擋得住「讀回」,擋不住真實硬體,使用者這段期間寫的字仍會出現在畫面上,但刻意不算數。
+
+代價要知道:那些字既不會被送出、也不會被吸收,就留在頁面上;除非剛好落在回覆的擦除範圍框內,會被 fadeout 的區域擦除一併擦掉。
 
 **零相依決策:** LLM 呼叫用 `net/http` 直打 Anthropic Messages API,不引官方 SDK(維持 armv7 + CGO_ENABLED=0 靜態、最小體積)。
 
@@ -243,15 +252,39 @@ ssh rm2 'journalctl -u rm2-scribe --since "10 min ago"'
 ssh rm2 'systemctl restart rm2-scribe'         # 改完 config.toml 後套用
 ```
 
+### 10.1 時間與時區
+
+送給 LLM 的每個請求都會附上當下時間(取自裝置系統時鐘),所以裝置的時間設定會直接影響
+「現在幾點/今天幾號」這類問題的答案。
+
+**校時本身不用設定**:裝置以 `chronyd` 走 NTP 自動同步,連上 WiFi 就會校正
+(`timedatectl` 顯示 `NTP service: active`、`System clock synchronized: yes`;
+2026-08-19 實測與開發機逐秒相符)。
+
+**但時區預設是 UTC**(`/etc/localtime → Universal`),不是當地時間 —— 時間點是對的,
+只是差一個時區偏移。設定當地時區:
+
+```sh
+ssh rm2 'timedatectl set-timezone Asia/Taipei'
+```
+
+改完整台一致(本程式、`journalctl` 時間戳、xochitl 都會變成當地時間),不必重啟服務。
+
+> ⚠️ `/etc/localtime` 在系統分割區,**OS 更新(A/B 切換)會把它打回 UTC**——症狀跟 §4-7
+> 的 unit 消失一樣無聲,只是時間突然差幾個小時。OS 更新後要重下這行(和 `install.sh` 一起)。
+
 一次正常的互動,日誌應依序出現:
 
 ```
 rm2-scribe 啟動:model=… idle=8s notebook="…" fadeout=…s
 等待手寫(停筆 8 秒後送出)…
 進入筆記本 "…",開始接收手寫      ← 閘門已開(限定筆記本時才有)
-擷取到 N 筆劃 / M 點               ← 停筆逾時已觸發
+擷取到 N 筆劃 / M 點               ← 停筆逾時已觸發(此後全程靜音)
 吸收使用者手寫…
 LLM 回覆:…
+寫出回覆(N 筆)…
+llm_fadeout 到,擦除回覆
+本次互動結束,恢復接收手寫          ← 靜音解除,這之前寫的字都不算數
 ```
 
 依「日誌卡在哪一行」對照:

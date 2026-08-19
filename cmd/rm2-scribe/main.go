@@ -51,13 +51,55 @@ func fromWacom(wx, wy int32) (float64, float64) {
 	return sx, sy
 }
 
-// injCtl 串行化所有注入(畫/擦),並在注入期間靜音 reader,
-// 避免注入事件被讀回。所有筆操作都必須經過它。
+// muter 是 injCtl 需要的 reader 能力(便於單元測試靜音的計數邏輯)。
+type muter interface {
+	Mute()
+	Unmute()
+	ClearBuffer()
+}
+
+// injCtl 串行化所有注入(畫/擦),並負責靜音 reader,避免注入事件被自己讀回。
+// 所有筆操作都必須經過它。
+//
+// 靜音採「巢狀計數」:handle() 在互動一開始就取得一個外層 hold,直到擦除回覆結束才放掉,
+// 中間每次實際注入各自再 hold 一次。因為計數在整段期間都 > 0,靜音是連續的——
+// 等 LLM 回應與等 llm_fadeout 這兩段空檔也不會恢復接收。
+// 由 run() 自己 hold,所以不存在「忘了靜音就注入」而造成回授迴圈的路徑。
 type injCtl struct {
 	dev    *pen.Device
-	reader *input.Reader
+	reader muter
 	mu     sync.Mutex
 	busy   atomic.Bool
+
+	holdMu sync.Mutex
+	holds  int
+}
+
+// hold 開始一段靜音區間,回傳結束用的函式(重複呼叫安全)。
+// 只有最外層那一次結束時才真的解除靜音,並清掉期間殘留的筆劃。
+func (c *injCtl) hold() func() {
+	c.holdMu.Lock()
+	c.holds++
+	if c.holds == 1 {
+		c.reader.Mute()
+	}
+	c.holdMu.Unlock()
+
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			c.holdMu.Lock()
+			c.holds--
+			last := c.holds == 0
+			c.holdMu.Unlock()
+			if last {
+				// 靜音期間使用者仍可能實際動筆(擋得住讀回,擋不住真實硬體);
+				// 這些筆劃刻意不算數,清掉才不會混進下一批。
+				c.reader.ClearBuffer()
+				c.reader.Unmute()
+			}
+		})
+	}
 }
 
 // Busy 回報目前是否正在注入;網頁介面要求重新啟動時會先等它結束,
@@ -94,14 +136,14 @@ func (c *injCtl) erase(strokes [][]pen.Point, stepPx float64, dt time.Duration) 
 }
 
 func (c *injCtl) run(fn func()) {
+	done := c.hold() // 巢狀在 handle() 的外層區間內時,只是把計數加一
+	defer done()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.busy.Store(true)
 	defer c.busy.Store(false)
-	c.reader.Mute()
 	fn()
-	time.Sleep(300 * time.Millisecond) // 讓最後的注入事件流盡再解除靜音
-	c.reader.Unmute()
+	time.Sleep(300 * time.Millisecond) // 讓最後的注入事件流盡,再(可能)解除靜音
 }
 
 func main() {
@@ -225,6 +267,11 @@ func handle(cfg config.Config, provider llm.Provider, inj *injCtl, b input.Batch
 		return
 	}
 
+	// 整段互動全程靜音:從吸收手寫開始,經過等 LLM、寫回覆、等 fadeout,
+	// 一直到擦除回覆結束都不接收筆劃。期間使用者在畫面上寫的字不會被記錄,
+	// 也不會被夾進下一批送出。defer 確保任何中途失敗的路徑都會恢復接收。
+	defer inj.hold()()
+
 	n := 0
 	for _, s := range b.Strokes {
 		n += len(s)
@@ -277,17 +324,18 @@ func handle(cfg config.Config, provider llm.Provider, inj *injCtl, b input.Batch
 	inj.draw(respStrokes, 6, dt, 40*time.Millisecond)
 	log.Printf("回覆已寫出。")
 
-	// 經 llm_fadeout 秒後擦除回覆(仍在指定筆記本時才擦)
+	// 經 llm_fadeout 秒後擦除回覆(仍在指定筆記本時才擦)。
+	// 這段刻意同步等待而不是丟 goroutine:靜音要一路持續到擦完,期間本來就
+	// 收不到新筆劃,主迴圈沒有別的事可做,同步反而讓「何時恢復接收」一目了然。
 	if cfg.Animation.LLMFadeout > 0 {
-		go func() {
-			time.Sleep(time.Duration(cfg.Animation.LLMFadeout * float64(time.Second)))
-			if cfg.Trigger.Notebook != "" && xochitl.CurrentName() != cfg.Trigger.Notebook {
-				return // 已離開筆記本,交由關閉清除處理
-			}
-			log.Printf("llm_fadeout 到,擦除回覆")
-			clearContent(inj, respStrokes, cfg.Animation.ClearMode)
-		}()
+		time.Sleep(time.Duration(cfg.Animation.LLMFadeout * float64(time.Second)))
+		if cfg.Trigger.Notebook != "" && xochitl.CurrentName() != cfg.Trigger.Notebook {
+			return // 已離開筆記本,交由關閉清除處理
+		}
+		log.Printf("llm_fadeout 到,擦除回覆")
+		clearContent(inj, respStrokes, cfg.Animation.ClearMode)
 	}
+	log.Printf("本次互動結束,恢復接收手寫")
 }
 
 // clearContent 完整清除一組筆劃佔用的區域:在其範圍框(或整頁)內
