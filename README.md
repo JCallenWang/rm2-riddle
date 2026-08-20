@@ -1,6 +1,6 @@
 # rm2-scribe
 
-reMarkable 2 上的手寫助理:在指定筆記本裡手寫問題,停筆數秒後,你的字會被「吸收」(擦除),送給遠端 LLM(Claude)辨識並回覆,回覆以手寫筆跡逐劃浮現在頁面上,經設定秒數後自動消失。
+reMarkable 2 上的手寫助理:在指定筆記本裡手寫問題,停筆數秒後,你的字會被「吸收」(擦除),送給遠端 LLM(Claude)辨識並回覆,回覆以連筆草寫筆跡逐行浮現在頁面上,經設定秒數後自動消失。
 
 全程與官方 `xochitl` 共生——不改畫面驅動、不裝第三方套件管理器、不接管顯示,只透過注入筆事件與讀取設定達成。
 
@@ -12,7 +12,7 @@ reMarkable 2 上的手寫助理:在指定筆記本裡手寫問題,停筆數秒�
 在指定筆記本手寫 → 停筆 idle_seconds 秒
   → 吸收(擦除)你的手寫,表示已讀取
   → 渲染成 PNG,送 Claude 視覺辨識 + 回覆(英文)
-  → 以單線字型把回覆逐劃寫回頁面下方
+  → 以連筆草寫字型把回覆逐「行」寫回頁面(從頁面上方開始,由上往下)
   → 經 llm_fadeout 秒後自動擦除回覆
 關閉指定筆記本 → 清除記錄並刪除頁面內容(徹底清空)
 ```
@@ -71,7 +71,8 @@ min_stroke_px = 4            # 移動範圍小於 N px 的筆劃視為點擊誤�
 [animation]
 write_speed = 1.0            # 回放速度倍率,越小寫得越慢(浮現越慢)
 font_size_px = 44
-line_spacing = 1.5
+line_spacing = 1.7            # 低於約 1.76 上下行會相碰,排版會自動夾住
+line_pause = 0.3             # 逐行浮現:寫完一行停 N 秒再寫下一行
 llm_fadeout = 30             # 回覆顯示 N 秒後自動擦除;0 = 不消失
 clear_mode = "region"        # region=只清內容範圍(快、乾淨) | page=整頁(過慢會失效)
 ```
@@ -139,7 +140,11 @@ key_file  = ""
 
 1. 在 reMarkable 建立(或指定)一本筆記本,名稱與 `config.toml` 的 `notebook` 一致
 2. 進入該筆記本,手寫一個英文問題,停筆等 `idle_seconds` 秒
-3. 你的字被擦除 → 回覆逐劃浮現 → `llm_fadeout` 秒後消失
+3. 你的字被擦除 → 回覆從頁面上方逐行浮現 → `llm_fadeout` 秒後消失
+
+回覆用的是 Hershey Script 草寫字型(公有領域)。排版時會把座標相接的筆劃併成同一筆,
+減少注入端的落筆/提筆開銷——那個開銷(每筆約 23ms)才是一行要寫多久的主因。
+本機預覽字型:`go run ./cmd/poc-font`(`-text` 換文字、`-size` 換字級,不需要裝置)。
 
 ## 專案結構
 
@@ -149,7 +154,7 @@ cmd/poc-*/           各階段驗證用 PoC(注入、讀取、擷取、字型、
 internal/input/      監聽筆劃、停筆逾時聚合、mute/gate/clear
 internal/render/     筆劃 → PNG
 internal/llm/        Anthropic Messages API(net/http 零相依)
-internal/font/       單線向量字型 + 排版
+internal/font/       Hershey Script 草寫字型(hershey.go + .jhf)+ 逐行排版(layout_cursive.go)
 internal/pen/        直寫 /dev/input/event1 注入(畫筆 / 橡皮擦)
 internal/xochitl/    偵測目前筆記本、name↔uuid、頁面路徑
 internal/web/        網頁設定介面(HTTPS + 自簽憑證,零相依 net/http)
@@ -178,3 +183,8 @@ ssh root@10.11.99.1 'systemctl disable --now rm2-scribe; rm -rf /home/root/rm2-s
 ## 授權
 
 MIT。本專案為 [MaximeRivest/riddle](https://github.com/MaximeRivest/riddle)(MIT)的 reMarkable 2 改編版,`LICENSE` 保留原作者的著作權宣告。
+
+回覆用的字型是 **Hershey Script**(`internal/font/hershey-script.jhf`,原樣收錄未修改),
+由 Dr. A. V. Hershey 於美國國家標準局任職期間製作,資料格式由 Cognition, Inc. 的 James Hurt 制定。
+該字型可自由用於任何用途,條件是散布時附上出處聲明——全文見
+[`internal/font/HERSHEY-LICENSE.txt`](internal/font/HERSHEY-LICENSE.txt)。

@@ -242,10 +242,15 @@ func clamp(v, lo, hi int32) int32 {
 // Point 是螢幕像素座標系中的一個筆劃取樣點。
 type Point struct{ X, Y float64 }
 
+// DrawPressure 是畫筆的落筆壓力。實測真筆的書寫範圍約 1600–3040,
+// 超出這個範圍 xochitl 會忽略。對壓力敏感的筆刷(原子筆、鉛筆)而言,
+// 壓力越低線越細——字級小的時候,細一點才不會把 a e o s 的內圈填滿。
+var DrawPressure int32 = 2200
+
 // DrawStroke 以虛擬筆畫出一條折線筆劃。
 // stepPx 為相鄰事件的內插距離(像素),dt 為事件間隔——dt 越大,浮現越慢。
 func (d *Device) DrawStroke(pts []Point, stepPx float64, dt time.Duration) error {
-	press := int32(2200)
+	press := DrawPressure
 	if press > d.Pressure.Max {
 		press = d.Pressure.Max
 	}

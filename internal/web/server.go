@@ -158,34 +158,40 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 
 // cfgJSON 是給瀏覽器看的設定檢視:不含 api_key 與網頁密碼。
 type cfgJSON struct {
-	Provider     string  `json:"provider"`
-	Model        string  `json:"model"`
-	SystemPrompt string  `json:"system_prompt"`
-	MaxTokens    int     `json:"max_tokens"`
-	IdleSeconds  float64 `json:"idle_seconds"`
-	Notebook     string  `json:"notebook"`
-	MinStrokePx  float64 `json:"min_stroke_px"`
-	WriteSpeed   float64 `json:"write_speed"`
-	FontSizePx   float64 `json:"font_size_px"`
-	LineSpacing  float64 `json:"line_spacing"`
-	LLMFadeout   float64 `json:"llm_fadeout"`
-	ClearMode    string  `json:"clear_mode"`
+	Provider      string  `json:"provider"`
+	Model         string  `json:"model"`
+	SystemPrompt  string  `json:"system_prompt"`
+	MaxTokens     int     `json:"max_tokens"`
+	IdleSeconds   float64 `json:"idle_seconds"`
+	Notebook      string  `json:"notebook"`
+	MinStrokePx   float64 `json:"min_stroke_px"`
+	WriteSpeed    float64 `json:"write_speed"`
+	FontSizePx    float64 `json:"font_size_px"`
+	LineSpacing   float64 `json:"line_spacing"`
+	LLMFadeout    float64 `json:"llm_fadeout"`
+	ClearMode     string  `json:"clear_mode"`
+	LinePause     float64 `json:"line_pause"`
+	PenPressure   float64 `json:"pen_pressure"`
+	LetterSpacing float64 `json:"letter_spacing"`
 }
 
 func toJSON(c config.Config) cfgJSON {
 	return cfgJSON{
-		Provider:     c.LLM.Provider,
-		Model:        c.LLM.Model,
-		SystemPrompt: c.LLM.SystemPrompt,
-		MaxTokens:    c.LLM.MaxTokens,
-		IdleSeconds:  c.Trigger.IdleSeconds,
-		Notebook:     c.Trigger.Notebook,
-		MinStrokePx:  c.Trigger.MinStrokePx,
-		WriteSpeed:   c.Animation.WriteSpeed,
-		FontSizePx:   c.Animation.FontSizePx,
-		LineSpacing:  c.Animation.LineSpacing,
-		LLMFadeout:   c.Animation.LLMFadeout,
-		ClearMode:    c.Animation.ClearMode,
+		Provider:      c.LLM.Provider,
+		Model:         c.LLM.Model,
+		SystemPrompt:  c.LLM.SystemPrompt,
+		MaxTokens:     c.LLM.MaxTokens,
+		IdleSeconds:   c.Trigger.IdleSeconds,
+		Notebook:      c.Trigger.Notebook,
+		MinStrokePx:   c.Trigger.MinStrokePx,
+		WriteSpeed:    c.Animation.WriteSpeed,
+		FontSizePx:    c.Animation.FontSizePx,
+		LineSpacing:   c.Animation.LineSpacing,
+		LLMFadeout:    c.Animation.LLMFadeout,
+		ClearMode:     c.Animation.ClearMode,
+		LinePause:     c.Animation.LinePause,
+		PenPressure:   c.Animation.PenPressure,
+		LetterSpacing: c.Animation.LetterSpacing,
 	}
 }
 
@@ -243,6 +249,9 @@ func (s *server) handleSaveConfig(w http.ResponseWriter, r *http.Request) {
 	cfg.Animation.LineSpacing = req.LineSpacing
 	cfg.Animation.LLMFadeout = req.LLMFadeout
 	cfg.Animation.ClearMode = req.ClearMode
+	cfg.Animation.LinePause = req.LinePause
+	cfg.Animation.PenPressure = req.PenPressure
+	cfg.Animation.LetterSpacing = req.LetterSpacing
 	if req.APIKey != "" {
 		cfg.LLM.APIKey = req.APIKey
 	}
@@ -292,6 +301,15 @@ func validate(c config.Config) error {
 	}
 	if c.Animation.ClearMode != "region" && c.Animation.ClearMode != "page" {
 		return fmt.Errorf("clear_mode 只能是 region 或 page")
+	}
+	if c.Animation.LetterSpacing < 0 || c.Animation.LetterSpacing > 40 {
+		return fmt.Errorf("letter_spacing 需在 0–40 之間")
+	}
+	if c.Animation.PenPressure < 800 || c.Animation.PenPressure > 3040 {
+		return fmt.Errorf("pen_pressure 需在 800–3040 之間(實測真筆的書寫範圍是 1600–3040)")
+	}
+	if c.Animation.LinePause < 0 || c.Animation.LinePause > 10 {
+		return fmt.Errorf("line_pause 需在 0–10 之間")
 	}
 	if c.Trigger.MinStrokePx < 0 || c.Trigger.MinStrokePx > 100 {
 		return fmt.Errorf("min_stroke_px 需在 0–100 之間")

@@ -6,7 +6,8 @@ provider = "claude"          # "claude" | "gemini"(gemini 尚未實作)
 api_key  = ""                # ← 請填入你的 Anthropic API key
 model    = "claude-sonnet-5"
 system_prompt = "You are an assistant living inside a handwritten notebook. Reply in English, briefly and warmly."
-max_tokens = 500             # 送出的請求會自動附上裝置系統時鐘的當下時間(含時區)
+max_tokens = 500             # 回覆長度由此控制;寫不下一頁的部分會被捨棄並記進日誌
+                             # (送出的請求會自動附上裝置系統時鐘的當下時間)
 
 [trigger]
 mode = "idle_timeout"        # 停筆逾時觸發
@@ -17,8 +18,11 @@ min_stroke_px = 4            # 移動範圍小於 N px 的筆劃視為點擊誤�
 [animation]
 write_speed = 1.0            # 書寫回放速度倍率,越小越慢(浮現越慢)
 font_size_px = 44
-line_spacing = 1.5
+line_spacing = 1.7          # 低於約 1.6 上下行會相碰,排版會自動夾住
 llm_fadeout = 30             # LLM 回應顯示 N 秒後自動擦除;0 = 不消失
+line_pause = 0.3             # 逐行浮現:每寫完一行停頓 N 秒再寫下一行
+letter_spacing = 3           # 字母之間額外拉開幾 px;連筆字型在細字級下容易黏在一起
+pen_pressure = 2200          # 寫回覆的落筆壓力(真筆為 1600–3040);原子筆/鉛筆越低越細,Fineliner 不受影響
 clear_mode = "region"        # region=只清內容範圍(快、乾淨) | page=整頁
 
 [capture]

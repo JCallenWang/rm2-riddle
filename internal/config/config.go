@@ -24,11 +24,14 @@ type Config struct {
 		MinStrokePx float64 // 筆劃範圍小於此值(螢幕 px)視為點擊誤觸,不記錄;0 = 不過濾
 	}
 	Animation struct {
-		WriteSpeed  float64
-		FontSizePx  float64
-		LineSpacing float64
-		LLMFadeout  float64 // LLM 回應顯示幾秒後自動擦除;0 = 不消失
-		ClearMode   string  // "region"=只清內容範圍框(快、乾淨) | "page"=整頁清除
+		WriteSpeed    float64
+		FontSizePx    float64
+		LineSpacing   float64
+		LLMFadeout    float64 // LLM 回應顯示幾秒後自動擦除;0 = 不消失
+		ClearMode     string  // "region"=只清內容範圍框(快、乾淨) | "page"=整頁清除
+		LinePause     float64 // 逐行動畫:每寫完一行停頓幾秒再寫下一行
+		LetterSpacing float64 // 字母之間額外拉開幾 px;連筆字型在細字級下容易黏在一起,拉開才讀得開
+		PenPressure   float64 // 寫回覆的落筆壓力(實測真筆為 1600–3040);對壓力敏感的筆刷而言越低越細,Fineliner 則固定寬度、不受影響
 	}
 	Capture struct {
 		Method string
@@ -55,9 +58,12 @@ func Default() Config {
 	c.Trigger.MinStrokePx = 4
 	c.Animation.WriteSpeed = 1.0
 	c.Animation.FontSizePx = 44
-	c.Animation.LineSpacing = 1.5
+	c.Animation.LineSpacing = 1.7
 	c.Animation.LLMFadeout = 30
 	c.Animation.ClearMode = "region"
+	c.Animation.LinePause = 0.3
+	c.Animation.PenPressure = 2200
+	c.Animation.LetterSpacing = 3
 	c.Capture.Method = "strokes"
 	c.Web.Enabled = false
 	c.Web.Listen = "127.0.0.1:8443"
@@ -135,6 +141,12 @@ func Load(path string) (Config, error) {
 				c.Animation.LLMFadeout = atof(val, c.Animation.LLMFadeout)
 			case "clear_mode":
 				c.Animation.ClearMode = sv
+			case "line_pause":
+				c.Animation.LinePause = atof(val, c.Animation.LinePause)
+			case "pen_pressure":
+				c.Animation.PenPressure = atof(val, c.Animation.PenPressure)
+			case "letter_spacing":
+				c.Animation.LetterSpacing = atof(val, c.Animation.LetterSpacing)
 			}
 		case "capture":
 			if key == "method" {

@@ -1,5 +1,5 @@
 // rm2-scribe 主程式:監聽手寫 → 渲染 PNG → 送 LLM 辨識+回覆 →
-// 以單線字型合成筆劃 → 注入 /dev/input/event1 讓 xochitl 逐劃寫出回覆。
+// 以連筆草寫字型合成筆劃 → 注入 /dev/input/event1 讓 xochitl 逐行寫出回覆。
 //
 // 互動流程:停筆逾時觸發 → 吸收(擦除)使用者手寫 → 送 LLM → 寫出回覆 →
 // 經 llm_fadeout 秒後自動擦除回覆。限定於指定筆記本;關閉該筆記本時清除記錄與內容。
@@ -43,6 +43,10 @@ const (
 	safeRight  = screenW - 40
 	safeTop    = 60
 	safeBottom = screenH - 60
+
+	// 回覆從頁面上方開始,但不貼齊安全區頂端——留一段空白讀起來比較舒服,
+	// 也讓回覆看起來像「寫在紙上」而不是頂到邊。
+	replyTopPad = 140
 )
 
 func fromWacom(wx, wy int32) (float64, float64) {
@@ -186,6 +190,7 @@ func main() {
 		log.Fatalf("開啟注入端失敗: %v", err)
 	}
 	defer dev.Close()
+	pen.DrawPressure = int32(cfg.Animation.PenPressure)
 	inj := &injCtl{dev: dev, reader: reader}
 
 	// 網頁設定介面(config.toml 的 [web].enabled 決定);
@@ -310,18 +315,45 @@ func handle(cfg config.Config, provider llm.Provider, inj *injCtl, b input.Batch
 	}
 	log.Printf("LLM 回覆: %q", reply)
 
-	// 版面:回覆寫在使用者筆跡下方(此時已擦除,但保留原座標當定位參考)
-	startY := replyStartY(b)
-	respStrokes := font.Layout(reply, font.LayoutOpts{
-		StartX:      safeLeft,
-		StartY:      startY,
-		FontPx:      cfg.Animation.FontSizePx,
-		LineSpacing: cfg.Animation.LineSpacing,
-		MaxX:        safeRight,
+	// 版面:回覆固定從頁面上方開始、逐行往下。使用者的手寫在前面已經被吸收,
+	// 所以整頁都是可用空間,行數也比「接在手寫下方」多得多。
+	lines, dropped := font.LayoutCursive(reply, font.CursiveOpts{
+		StartX:        safeLeft,
+		StartY:        safeTop + replyTopPad,
+		FontPx:        cfg.Animation.FontSizePx,
+		LineSpacing:   cfg.Animation.LineSpacing,
+		MaxX:          safeRight,
+		MaxY:          safeBottom,
+		LetterSpacing: cfg.Animation.LetterSpacing,
 	})
-	log.Printf("寫出回覆(%d 筆)…", len(respStrokes))
-	dt := time.Duration(float64(4*time.Millisecond) / clampSpeed(cfg.Animation.WriteSpeed))
-	inj.draw(respStrokes, 6, dt, 40*time.Millisecond)
+	if dropped > 0 {
+		log.Printf("警告:回覆超出頁面,有 %d 個字詞沒寫出來"+
+			"(調低 max_tokens、在 system_prompt 要求更短,或調小 font_size_px)", dropped)
+	}
+	var respStrokes [][]pen.Point
+	for _, ln := range lines {
+		respStrokes = append(respStrokes, ln.Strokes...)
+	}
+
+	// 逐行寫出:一整行以最快速度注入,行與行之間才停頓。
+	// 決定一行要寫多久的是「筆劃數量」而非移動速度——每筆劃有約 23ms 的
+	// 落筆/提筆固定開銷,所以連筆字型(一個單字一筆)才是這裡的關鍵。
+	log.Printf("寫出回覆(%d 行 / %d 筆)…", len(lines), len(respStrokes))
+	// 注入參數維持已在實機驗證過的值:取樣 6px、每步 4ms、筆與筆之間 40ms。
+	// 曾經為了「一行快點寫完」把三者一起調激進(4px / 2ms / 0ms,事件率約 3 倍
+	// 且沒有落筆沉澱時間),結果字在裝置上糊掉——本機預覽看不出來,因為預覽不經過
+	// xochitl。這一段的速度改由「筆劃數變少」來換(連筆合併),不是靠拉高事件率。
+	// 真要更快就調 write_speed,它同時縮放這兩個延遲。
+	speed := clampSpeed(cfg.Animation.WriteSpeed)
+	dt := time.Duration(float64(4*time.Millisecond) / speed)
+	gap := time.Duration(float64(40*time.Millisecond) / speed)
+	pause := time.Duration(cfg.Animation.LinePause * float64(time.Second))
+	for i, ln := range lines {
+		inj.draw(ln.Strokes, 6, dt, gap)
+		if i < len(lines)-1 {
+			time.Sleep(pause)
+		}
+	}
 	log.Printf("回覆已寫出。")
 
 	// 經 llm_fadeout 秒後擦除回覆(仍在指定筆記本時才擦)。
@@ -433,29 +465,6 @@ func userStrokesScreen(b input.Batch) [][]pen.Point {
 		}
 	}
 	return out
-}
-
-// replyStartY 取使用者筆跡最低點(螢幕 y 最大),回覆從其下方一段距離開始。
-func replyStartY(b input.Batch) float64 {
-	maxY := 0.0
-	found := false
-	for _, s := range b.Strokes {
-		for _, p := range s {
-			_, sy := fromWacom(p.X, p.Y)
-			if sy > maxY {
-				maxY = sy
-			}
-			found = true
-		}
-	}
-	if !found {
-		return 400
-	}
-	y := maxY + 120
-	if y > screenH-200 {
-		y = screenH - 200
-	}
-	return y
 }
 
 // clearRecords 清除偵測程式的暫存筆劃檔。
