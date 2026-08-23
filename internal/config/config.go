@@ -30,7 +30,7 @@ type Config struct {
 		LLMFadeout    float64 // LLM 回應顯示幾秒後自動擦除;0 = 不消失
 		ClearMode     string  // "region"=只清內容範圍框(快、乾淨) | "page"=整頁清除
 		LinePause     float64 // 逐行動畫:每寫完一行停頓幾秒再寫下一行
-		LetterSpacing float64 // 字母之間額外拉開幾 px;連筆字型在細字級下容易黏在一起,拉開才讀得開
+		LetterSpacing float64 // 字母之間額外拉開幾 px;0 = 字型原本的字距,字母剛好相接。>0 會把連筆拆開,只在覺得太擠時微調
 		PenPressure   float64 // 寫回覆的落筆壓力(實測真筆為 1600–3040);對壓力敏感的筆刷而言越低越細,Fineliner 則固定寬度、不受影響
 	}
 	Capture struct {
@@ -63,7 +63,7 @@ func Default() Config {
 	c.Animation.ClearMode = "region"
 	c.Animation.LinePause = 0.3
 	c.Animation.PenPressure = 2200
-	c.Animation.LetterSpacing = 3
+	c.Animation.LetterSpacing = 0
 	c.Capture.Method = "strokes"
 	c.Web.Enabled = false
 	c.Web.Listen = "127.0.0.1:8443"

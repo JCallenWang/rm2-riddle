@@ -1,8 +1,11 @@
 package font
 
 import (
+	"math"
 	"strings"
 	"testing"
+
+	"rm2scribe/internal/pen"
 )
 
 // TestHersheyDataParses 檢查內嵌的 .jhf 有被完整解析。資料檔是外部來源,
@@ -27,6 +30,93 @@ func TestHersheyDataParses(t *testing.T) {
 	}
 	if end.x != g.rb || end.y != 4 {
 		t.Errorf("'n' 收筆 = (%v,%v),期望 (%v,4)", end.x, end.y, g.rb)
+	}
+}
+
+// TestLowercaseAbuts 是「字母工整不重疊、基線切齊」的根本保證。
+//
+// 這套字型讓相鄰字母在同一個點交會:每個小寫都有一筆精確收在 (rb, hJoinY),
+// 而每個小寫的墨跡最左緣就在自己的 lb、且在 hJoinY 附近。按自然前進寬度並排時,
+// 前一個字母的收筆點正好落在後一個字母的左緣上——接點高度因此永遠相同。
+// 這個性質一旦被破壞(補引筆、拉開字距),就會出現使用者回報的「起筆點不同、
+// 基線不同、下緣未切齊」。
+func TestLowercaseAbuts(t *testing.T) {
+	for r := 'a'; r <= 'z'; r++ {
+		g, ok := hersheyFor(r)
+		if !ok {
+			t.Fatalf("找不到 %q", r)
+		}
+		if !g.joins {
+			t.Errorf("%q 沒有走連筆規則", r)
+			continue
+		}
+		last := g.body[len(g.body)-1]
+		if out := last[len(last)-1]; out.x != g.rb || out.y != hJoinY {
+			t.Errorf("%q 收筆 = (%v,%v),期望 (%v,%v)", r, out.x, out.y, g.rb, hJoinY)
+		}
+		// 進筆點 (lb, hJoinY) 附近必須有墨,前一個字母才接得上。
+		// (不能順便檢查「沒有墨越過左 bearing」——f j p 的下伸迴圈本來就會往左甩,
+		//  那是 hLeftBleed 處理的另一件事。)
+		best := math.Inf(1)
+		for _, st := range g.body {
+			for _, p := range st {
+				if d := math.Hypot(p.x-g.lb, p.y-hJoinY); d < best {
+					best = d
+				}
+			}
+		}
+		// 1.5 格線單位在字級 44 下約 3px——肉眼看不出斷開
+		if best > 1.5 {
+			t.Errorf("%q 的墨跡離接點 (%v,%v) 有 %.1f 單位,接不上前一個字母",
+				r, g.lb, hJoinY, best)
+		}
+	}
+}
+
+// TestLettersMeetOnDefaultTracking 從排版結果驗證同一件事:字距為 0(預設)時,
+// 每個字母的墨跡都必須碰到前一個字母的收筆點。
+func TestLettersMeetOnDefaultTracking(t *testing.T) {
+	const (
+		fontPx = 44
+		word   = "abcdefghijklmnopqrstuvwxyz"
+	)
+	lines, _ := LayoutCursive(word, CursiveOpts{
+		StartX: 170, StartY: 200, FontPx: fontPx, LineSpacing: 1.7, MaxX: 4000,
+	})
+	if len(lines) != 1 {
+		t.Fatalf("應排成 1 行,got %d", len(lines))
+	}
+	scale := fontPx / (hBase - hAsc)
+
+	// 逐一算出每個字母的收筆點,檢查下一個字母有墨跡落在那裡
+	var pts []pen.Point
+	for _, st := range lines[0].Strokes {
+		pts = append(pts, st...)
+	}
+	penX := 170 + hLeftBleed*scale
+	for i, r := range word {
+		g, _ := hersheyFor(r)
+		exit := pen.Point{
+			X: penX + (g.rb-g.lb)*scale,
+			Y: 200 + (hJoinY-hAsc)*scale,
+		}
+		penX = exit.X
+		if i == len(word)-1 {
+			break
+		}
+		best := math.Inf(1)
+		for _, p := range pts {
+			// 只看下一個字母那一側的墨
+			if p.X < exit.X-0.01 {
+				continue
+			}
+			if d := math.Hypot(p.X-exit.X, p.Y-exit.Y); d < best {
+				best = d
+			}
+		}
+		if best > 3.5 { // 1.5 格線單位 × scale ≈ 3.1px
+			t.Errorf("%q 之後的字母離收筆點 %.1fpx,接不上", r, best)
+		}
 	}
 }
 

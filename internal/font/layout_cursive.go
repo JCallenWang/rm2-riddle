@@ -24,12 +24,6 @@ type CursiveOpts struct {
 	LetterSpacing  float64 // 字母之間額外拉開的距離(px);0 = 用字型原本的字距
 }
 
-// joinTol 是「上一個字母的收筆點」與「下一個字母的起筆點」要多接近才併成一筆
-// (單位:Hershey 格線)。這套字型的小寫有 24/26 收在右 bearing、16/26 起於
-// 左 bearing 且都在 y=4,所以多數相鄰字母會自然接上,併筆後既是草寫的連接筆畫,
-// 也把筆劃數壓下來——注入端每筆劃有約 23ms 的固定開銷,筆劃數就是一行要寫多久。
-const joinTol = 1.5
-
 // LayoutCursive 把文字排版成「一行一組筆劃」。
 //
 // 第二個回傳值是因為超出 MaxY 而沒排進去的字詞數;呼叫端應該把它記進日誌,
@@ -47,13 +41,11 @@ func LayoutCursive(text string, o CursiveOpts) (lines []Line, dropped int) {
 		space = minSpace
 	}
 
-	// 字距拉開時,連接筆畫也跟著變長,所以併筆的容差要一起放寬,
-	// 否則字母會從「相連」變成「各自獨立」,失去草寫的樣子。
 	track := o.LetterSpacing
-	tol := joinTol*scale + track*1.2
 
 	var cur Line
-	var poly []pen.Point // 目前正在連筆的折線
+	var poly []pen.Point    // 目前正在連筆的折線
+	var marks [][]pen.Point // 待補的附加筆劃(i j 的點、t 的橫槓),寫完單字才補
 	// 行首右移 hLeftBleed:j f p 的下伸迴圈會往左甩出自己的前進寬度外,
 	// 不留這段的話行首那個字會畫到 StartX 左邊。
 	startX := o.StartX + hLeftBleed*scale
@@ -68,18 +60,31 @@ func LayoutCursive(text string, o CursiveOpts) (lines []Line, dropped int) {
 		}
 	}
 
-	flush := func() {
+	// emit 收下一條筆劃。單點(句點之類)要撐成一小段,否則注入端會拒收、
+	// 句點就不見了。
+	emit := func(ps []pen.Point) {
 		switch {
-		case len(poly) >= 2:
-			cur.Strokes = append(cur.Strokes, poly)
-		case len(poly) == 1:
-			// 單點(句點之類)畫一小段,否則注入端會拒收、句點就不見了
-			cur.Strokes = append(cur.Strokes, []pen.Point{poly[0], {X: poly[0].X + 1, Y: poly[0].Y + 1}})
+		case len(ps) >= 2:
+			cur.Strokes = append(cur.Strokes, ps)
+		case len(ps) == 1:
+			cur.Strokes = append(cur.Strokes, []pen.Point{ps[0], {X: ps[0].X + 1, Y: ps[0].Y + 1}})
 		}
+	}
+	flush := func() {
+		emit(poly)
 		poly = nil
+	}
+	// dropMarks 補上 i 的點、t 的橫槓這類附加筆劃。刻意等到單字寫完才補,
+	// 夾在字身中間會把連筆鏈打斷。
+	dropMarks := func() {
+		for _, m := range marks {
+			emit(m)
+		}
+		marks = nil
 	}
 	endLine := func() {
 		flush()
+		dropMarks()
 		if len(cur.Strokes) > 0 {
 			cur.Top, cur.Bottom = strokesBounds(cur.Strokes)
 			lines = append(lines, cur)
@@ -110,6 +115,7 @@ func LayoutCursive(text string, o CursiveOpts) (lines []Line, dropped int) {
 			continue
 		case " ":
 			flush() // 單字之間提筆
+			dropMarks()
 			penX += cursiveWordWidth(" ", scale) + track
 			continue
 		}
@@ -123,28 +129,44 @@ func LayoutCursive(text string, o CursiveOpts) (lines []Line, dropped int) {
 		}
 		for _, r := range tok {
 			g, _ := hersheyFor(r)
-			for _, st := range g.strokes {
+			toScreen := func(st []pt) []pen.Point {
 				ps := make([]pen.Point, 0, len(st))
 				for _, q := range st {
 					ps = append(ps, sp(q, g.lb))
 				}
-				// 貪婪串接:只要這一筆的起點落在前一筆的收筆點上,就併成同一筆。
-				// 刻意不去假設「哪一筆是字身、哪一筆是附加筆劃」——Hershey 會把一個
-				// 字母拆成多筆(n 的第一筆是自左 bearing 進來的引筆、第二筆才是字身;
-				// i 的第一筆卻是上面那個點),依筆劃順序猜角色會猜錯。座標自己會說話。
-				if len(poly) > 0 && len(ps) > 0 &&
-					math.Hypot(ps[0].X-poly[len(poly)-1].X, ps[0].Y-poly[len(poly)-1].Y) <= tol {
-					poly = append(poly, ps...)
+				return ps
+			}
+			if !g.joins {
+				flush() // 大寫、數字、標點不走連筆慣例
+			}
+			for _, st := range g.body {
+				ps := toScreen(st)
+				// 只在「完全重合」時併筆——字型讓相鄰字母在 (rb,4)=(lb,4) 這個點
+				// 交會,兩邊算出來的螢幕座標是同一個值,所以合得起來的本來就該合。
+				// 不用容差去猜:容差一放寬,n m 字幹內部本來要提筆的地方會被硬接成
+				// 一道回頭的斜線,小字級下就糊成一團。
+				if len(poly) > 0 && len(ps) > 0 && coincide(poly[len(poly)-1], ps[0]) {
+					poly = append(poly, ps[1:]...)
 					continue
 				}
 				flush()
 				poly = ps
+			}
+			for _, st := range g.marks {
+				marks = append(marks, toScreen(st))
 			}
 			penX += (g.rb-g.lb)*scale + track
 		}
 	}
 	endLine()
 	return lines, dropped
+}
+
+// coincide 判斷兩點是不是同一點。容差刻意訂得極小(遠小於一個像素):
+// 相接的字母兩邊算出來的是同一個算式,只需要吸收浮點誤差,不是拿來猜「夠不夠近」。
+func coincide(a, b pen.Point) bool {
+	const eps = 1e-6
+	return math.Abs(a.X-b.X) < eps && math.Abs(a.Y-b.Y) < eps
 }
 
 // cursiveWordWidth 估算一個 token 的像素寬度,用來決定要不要換行。

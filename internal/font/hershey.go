@@ -39,12 +39,62 @@ const (
 )
 
 // hGlyph 是一個 Hershey 字符。座標為原始格線單位,尚未縮放。
+//
+// strokes 是字型原本的分段;body/marks/joins 是排版真正使用的「正規化」形式,
+// 由 normalize 產生,目的是讓每個字母從同一個進筆點開始、收在同一個收筆點——
+// 見 normalize 的說明。
 type hGlyph struct {
 	lb, rb  float64 // 左右 bearing;前進寬度 = rb - lb
 	strokes [][]pt
+
+	joins bool   // 走連筆規則(進出點都在 (lb,4)/(rb,4));只有小寫字母
+	body  [][]pt // 字身:第一筆起於進筆點,最後一筆收於收筆點
+	marks [][]pt // 與字身分離的附加筆劃(i j 的點、t 的橫槓、x 的交叉筆)
 }
 
 var hershey = parseJHF(hersheyData)
+
+// normalize 把字符拆成「字身」與「附加筆劃」兩部分,並標記它是否走連筆慣例。
+//
+// 這套字型的小寫是為了「按自然前進寬度並排就會自己接上」而設計的:每個字母都
+// 有一筆精確收在 (rb,4),而下一個字母的最左緣就落在自己的 (lb,4)——兩者在螢幕上
+// 是同一個點、同一個高度,墨跡自然相接。所以這裡**不做**任何幾何調整:補引筆
+// 會讓 a o c e 的引線橫穿過字碗,拉開字距則會把這個天然接合拆散。
+//
+// 真正要處理的是筆劃「順序」:i j 的點在第一筆、t 的橫槓與 x 的交叉筆在最後一筆,
+// 夾在字身中間會把連筆鏈打斷。抽出來成為 marks,由排版在寫完一個單字後補上
+// ——人寫草寫也是先把字寫完,再回頭點 i、劃 t。
+func (g *hGlyph) normalize(r rune) {
+	// 只有小寫字母遵循這套慣例。大寫、數字、標點的收筆點各在各的地方,維持原樣。
+	g.body = g.strokes
+	if r < 'a' || r > 'z' || len(g.strokes) == 0 {
+		return
+	}
+
+	exit := -1
+	for i, st := range g.strokes {
+		if p := st[len(st)-1]; p.x == g.rb && p.y == hJoinY {
+			exit = i
+		}
+	}
+	if exit < 0 {
+		return
+	}
+
+	// 進筆筆劃:第一個起於 (lb,4) 的筆劃。排在它前面的是附加筆劃(i j 的點)。
+	// 字碗類字母(a c d e g o q w)沒有這種筆劃,entry 維持 0。
+	entry := 0
+	for i := 0; i <= exit; i++ {
+		if p := g.strokes[i][0]; p.x == g.lb && p.y == hJoinY {
+			entry = i
+			break
+		}
+	}
+
+	g.joins = true
+	g.marks = append(append([][]pt{}, g.strokes[:entry]...), g.strokes[exit+1:]...)
+	g.body = append([][]pt{}, g.strokes[entry:exit+1]...)
+}
 
 // parseJHF 解析 .jhf,回傳 rune → 字符。
 func parseJHF(data string) map[rune]hGlyph {
@@ -73,7 +123,9 @@ func parseJHF(data string) map[rune]hGlyph {
 		if len(cur) > 0 {
 			g.strokes = append(g.strokes, cur)
 		}
-		out[rune(32+i)] = g
+		r := rune(32 + i)
+		g.normalize(r)
+		out[r] = g
 	}
 	return out
 }
